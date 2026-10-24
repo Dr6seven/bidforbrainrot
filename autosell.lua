@@ -10,7 +10,7 @@ if getgenv().BrainrotUI then pcall(function() getgenv().BrainrotUI:Destroy() end
 
 local SELL_INTERVAL = 5      -- detik, dihitung setelah proses jual selesai
 local COLLECT_INTERVAL = 10  -- detik
-local CONFIRM_DELAY = 0.3    -- jeda antar tembakan (klik 1 -> klik konfirmasi)
+local CONFIRM_DELAY = 0.5    -- jeda antar tembakan (klik 1 -> klik konfirmasi)
 
 local State = { AutoSell = false, AutoCollect = false, Running = true }
 getgenv().BrainrotState = State
