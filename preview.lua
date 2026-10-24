@@ -1,4 +1,4 @@
--- PREVIEW UI v4: BID FOR BRAINROT V1 (tampilan saja, belum terhubung ke logika)
+-- PREVIEW UI v5: BID FOR BRAINROT V1 (tampilan saja, belum terhubung ke logika)
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local TS = game:GetService("TweenService")
@@ -19,7 +19,8 @@ local C_GOOD = Color3.fromRGB(90, 200, 120)
 
 local State = {
     AutoSell = false, AutoCollect = false, AutoRebirth = false,
-    ESPPlayer = false, SellBelow = 0,
+    ESPPlayer = false,
+    SellMin = 0, SellMax = 0,   -- SellMax = 0 berarti filter nilai mati
 }
 local TIERS = {
     { "Common",       Color3.fromRGB(200, 200, 200), false },
@@ -238,25 +239,37 @@ local function setTab(name)
     end
 end
 
-local function newTab(name, order)
+-- Tab dengan ikon (emoji). Ganti ikon di parameter ketiga kalau mau.
+local function newTab(name, order, icon)
     local b = Instance.new("TextButton")
     b.Size = UDim2.new(1, 0, 0, 30)
     b.Text = name
     b.Font = Enum.Font.GothamBold
     b.TextSize = 12
+    b.TextXAlignment = Enum.TextXAlignment.Left
     b.LayoutOrder = order
     b.Parent = tabList
     corner(b, 8)
+    Instance.new("UIPadding", b).PaddingLeft = UDim.new(0, 32)
+
+    local ic = Instance.new("TextLabel")
+    ic.Size = UDim2.new(0, 24, 1, 0)
+    ic.Position = UDim2.new(0, -26, 0, 0)
+    ic.BackgroundTransparency = 1
+    ic.Text = icon
+    ic.TextSize = 15
+    ic.Font = Enum.Font.GothamBold
+    ic.TextColor3 = Color3.new(1, 1, 1)
+    ic.Parent = b
+
     tabs[name] = b
     b.MouseButton1Click:Connect(function() setTab(name) end)
 end
 
 local mainPage = newPage("Main")
-local autoPage = newPage("Auto")
 local miscPage = newPage("Misc")
-newTab("Main", 1)
-newTab("Auto", 2)
-newTab("Misc", 3)
+newTab("Main", 1, "🏠")
+newTab("Misc", 2, "⚙")
 
 -- Bagian yang bisa dicari lewat kolom Search
 local sections = {}
@@ -504,8 +517,8 @@ for idx, t in ipairs(TIERS) do
     end)
 end
 
--- Minimum Brainrot To Sell (input angka, mendukung k/m/b)
-local sVal = section(mainPage, "minimum brainrot to sell nilai batas value", 4)
+-- Filter nilai: Min dan Max (mendukung k, m, b)
+local sVal = section(mainPage, "minimum maximum brainrot to sell nilai batas value min max", 4)
 local valCard = Instance.new("Frame")
 valCard.Size = UDim2.new(1, 0, 0, 0)
 valCard.AutomaticSize = Enum.AutomaticSize.Y
@@ -521,37 +534,53 @@ vpad.PaddingLeft = UDim.new(0, 10)
 vpad.PaddingRight = UDim.new(0, 10)
 vpad.PaddingBottom = UDim.new(0, 8)
 
-textBlock(valCard, "Minimum Brainrot To Sell",
-    "Hanya jual brainrot yang nilainya DI BAWAH angka ini (yang mahal aman). Kosong = jual per tier. Bisa pakai k, m, b.",
+textBlock(valCard, "Min / Max Brainrot To Sell",
+    "Hanya jual brainrot yang nilainya di antara Min dan Max. Max kosong = filter nilai mati (jual per rarity). Bisa pakai k, m, b.",
     0, true)
 
-local valBox = Instance.new("TextBox")
-valBox.Size = UDim2.new(1, 0, 0, 26)
-valBox.BackgroundColor3 = C_BG
-valBox.PlaceholderText = "eg. 500k, 2m, 1b"
-valBox.PlaceholderColor3 = C_GRAY
-valBox.Text = ""
-valBox.TextColor3 = Color3.new(1, 1, 1)
-valBox.Font = Enum.Font.Gotham
-valBox.TextSize = 11
-valBox.ClearTextOnFocus = false
-valBox.LayoutOrder = 2
-valBox.Parent = valCard
-corner(valBox, 6)
+local valRow = Instance.new("Frame")
+valRow.Size = UDim2.new(1, 0, 0, 26)
+valRow.BackgroundTransparency = 1
+valRow.LayoutOrder = 2
+valRow.Parent = valCard
 
-valBox.FocusLost:Connect(function()
-    local v = parseValue(valBox.Text)
-    if v == nil then
-        State.SellBelow = 0
+local function valBox(placeholder, xScale, xOff)
+    local b = Instance.new("TextBox")
+    b.Size = UDim2.new(0.5, -3, 1, 0)
+    b.Position = UDim2.new(xScale, xOff, 0, 0)
+    b.BackgroundColor3 = C_BG
+    b.PlaceholderText = placeholder
+    b.PlaceholderColor3 = C_GRAY
+    b.Text = ""
+    b.TextColor3 = Color3.new(1, 1, 1)
+    b.Font = Enum.Font.Gotham
+    b.TextSize = 11
+    b.ClearTextOnFocus = false
+    b.Parent = valRow
+    corner(b, 6)
+    return b
+end
+local minBox = valBox("Min  eg. 500k", 0, 0)
+local maxBox = valBox("Max  eg. 2m", 0.5, 3)
+
+local function applyRange()
+    local mn, mx = parseValue(minBox.Text), parseValue(maxBox.Text)
+    if mn == nil or mx == nil then
+        State.SellMin, State.SellMax = 0, 0
         setStatus("Format salah. Contoh: 500k, 2m, 1b", C_WARN)
-    elseif v == 0 then
-        State.SellBelow = 0
-        setStatus("Batas nilai OFF (jual per tier)")
+    elseif mx == 0 then
+        State.SellMin, State.SellMax = 0, 0
+        setStatus("Filter nilai OFF (jual per rarity)")
+    elseif mn >= mx then
+        State.SellMin, State.SellMax = 0, 0
+        setStatus("Min harus lebih kecil dari Max", C_WARN)
     else
-        State.SellBelow = v
-        setStatus("Jual yang nilainya < " .. fmtNum(v), C_GOOD)
+        State.SellMin, State.SellMax = mn, mx
+        setStatus("Jual nilai " .. fmtNum(mn) .. " - " .. fmtNum(mx), C_GOOD)
     end
-end)
+end
+minBox.FocusLost:Connect(applyRange)
+maxBox.FocusLost:Connect(applyRange)
 
 -- Tombol Cek / Sell Sekarang
 local sBtn = section(mainPage, "cek sell sekarang", 5)
@@ -577,37 +606,4 @@ end
 local checkBtn = rowBtn("Cek (tanpa jual)", Color3.fromRGB(60, 110, 200), 0, 0)
 local sellNow = rowBtn("Sell Sekarang", C_ACC, 0.5, 3)
 checkBtn.MouseButton1Click:Connect(function() setStatus("Preview: Cek belum terhubung", C_WARN) end)
-sellNow.MouseButton1Click:Connect(function() setStatus("Preview: Sell belum terhubung", C_WARN) end)
-
--- Cash
-groupTitle(mainPage, "Cash", 6)
-local sCol = section(mainPage, "auto collect cash", 7)
-switchRow(sCol, "Auto Collect Cash",
-    "Ambil uang otomatis tiap beberapa detik tanpa menekan tombol Collect.", "AutoCollect")
-
--- Status
-local sStat = section(mainPage, "status", 8)
-statusLbl = Instance.new("TextLabel")
-statusLbl.Size = UDim2.new(1, 0, 0, 18)
-statusLbl.BackgroundTransparency = 1
-statusLbl.Text = "Siap. (preview)"
-statusLbl.TextColor3 = C_GRAY
-statusLbl.Font = Enum.Font.Gotham
-statusLbl.TextSize = 11
-statusLbl.TextXAlignment = Enum.TextXAlignment.Left
-statusLbl.LayoutOrder = 1
-statusLbl.Parent = sStat
-
--- ===== HALAMAN AUTO =====
-local sReb = section(autoPage, "auto rebirth", 1)
-switchRow(sReb, "Auto Rebirth",
-    "Rebirth otomatis kalau syaratnya sudah terpenuhi. (Belum terhubung, butuh remote Rebirth.)",
-    "AutoRebirth")
-
--- ===== HALAMAN MISC =====
-local sEsp = section(miscPage, "esp player", 1)
-switchRow(sEsp, "ESP Player",
-    "Menampilkan penanda pemain lain di layar. (Tampilan saja, belum terhubung.)", "ESPPlayer")
-
-refreshAll()
-setTab("Main")
+sellNow.MouseButton1Click:Connect(function() setStatus("P
