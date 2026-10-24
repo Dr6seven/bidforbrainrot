@@ -1,5 +1,4 @@
-
--- PREVIEW UI v3: BID FOR BRAINROT V1 (gaya sidebar + switch, tampilan saja)
+-- PREVIEW UI v4: BID FOR BRAINROT V1 (tampilan saja, belum terhubung ke logika)
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local TS = game:GetService("TweenService")
@@ -16,28 +15,44 @@ local C_ON   = Color3.fromRGB(60, 190, 100)
 local C_ACC  = Color3.fromRGB(220, 130, 30)
 local C_GRAY = Color3.fromRGB(150, 150, 160)
 local C_WARN = Color3.fromRGB(240, 170, 60)
+local C_GOOD = Color3.fromRGB(90, 200, 120)
 
-local State = { AutoSell = false, AutoCollect = false, SellBelow = 0 }
+local State = {
+    AutoSell = false, AutoCollect = false, AutoRebirth = false,
+    ESPPlayer = false, SellBelow = 0,
+}
 local TIERS = {
-    { "Common",      Color3.fromRGB(200, 200, 200), false },
-    { "Uncommon",    Color3.fromRGB(60, 180, 60),   false },
-    { "Rare",        Color3.fromRGB(50, 130, 255),  false },
-    { "Epic",        Color3.fromRGB(170, 60, 230),  false },
-    { "Legendary",   Color3.fromRGB(230, 200, 40),  false },
-    { "Mythic",      Color3.fromRGB(255, 120, 60),  false },
-    { "Cosmic",      Color3.fromRGB(40, 150, 255),  false },
-    { "Secret",      Color3.fromRGB(230, 40, 140),  false },
-    { "Celestial",   Color3.fromRGB(190, 90, 255),  false },
-    { "Divine",      Color3.fromRGB(255, 170, 220), false },
-    { "Brainrot God", Color3.fromRGB(255, 80, 80),  false },
+    { "Common",       Color3.fromRGB(200, 200, 200), false },
+    { "Uncommon",     Color3.fromRGB(60, 180, 60),   false },
+    { "Rare",         Color3.fromRGB(50, 130, 255),  false },
+    { "Epic",         Color3.fromRGB(170, 60, 230),  false },
+    { "Legendary",    Color3.fromRGB(230, 200, 40),  false },
+    { "Mythic",       Color3.fromRGB(255, 120, 60),  false },
+    { "Cosmic",       Color3.fromRGB(40, 150, 255),  false },
+    { "Secret",       Color3.fromRGB(230, 40, 140),  false },
+    { "Celestial",    Color3.fromRGB(190, 90, 255),  false },
+    { "Divine",       Color3.fromRGB(255, 170, 220), false },
+    { "Brainrot God", Color3.fromRGB(255, 80, 80),   false },
 }
 
 local function fmtNum(n)
+    if n >= 1e12 then return string.format("%.3gT", n / 1e12) end
     if n >= 1e9 then return string.format("%.3gB", n / 1e9) end
     if n >= 1e6 then return string.format("%.3gM", n / 1e6) end
     if n >= 1e3 then return string.format("%.3gK", n / 1e3) end
     return tostring(math.floor(n))
 end
+
+-- "500k", "2m", "1.5b" -> angka. Kosong = 0. Format salah = nil
+local function parseValue(s)
+    s = (s or ""):lower():gsub("[%s,]", "")
+    if s == "" then return 0 end
+    local num, suf = s:match("^(%d*%.?%d+)([kmbt]?)$")
+    if not num then return nil end
+    local mult = ({ k = 1e3, m = 1e6, b = 1e9, t = 1e12 })[suf] or 1
+    return tonumber(num) * mult
+end
+
 local function corner(inst, r) Instance.new("UICorner", inst).CornerRadius = UDim.new(0, r) end
 local function countSelected()
     local n = 0
@@ -57,7 +72,7 @@ local ok = pcall(function() gui.Parent = (gethui and gethui()) or game:GetServic
 if not ok or not gui.Parent then gui.Parent = lp:WaitForChild("PlayerGui") end
 getgenv().PreviewUI = gui
 
-local WIN_W, WIN_H = 420, 260
+local WIN_W, WIN_H = 430, 270
 local main = Instance.new("Frame")
 main.Size = UDim2.new(0, WIN_W, 0, WIN_H)
 main.Position = UDim2.new(0.5, -WIN_W / 2, 0.5, -WIN_H / 2)
@@ -66,8 +81,7 @@ main.BorderSizePixel = 0
 main.ClipsDescendants = true
 main.Parent = gui
 corner(main, 12)
-local stroke = Instance.new("UIStroke", main)
-stroke.Color = Color3.fromRGB(60, 60, 72)
+Instance.new("UIStroke", main).Color = Color3.fromRGB(60, 60, 72)
 
 -- ===== TITLE BAR =====
 local bar = Instance.new("Frame")
@@ -118,8 +132,7 @@ local minBtn = barBtn("-", -64, C_OFF)
 local closeBtn = barBtn("X", -32, Color3.fromRGB(200, 50, 50))
 closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
 
--- Drag lewat title bar
-do
+do -- drag lewat title bar
     local dragging, startPos, startPoint, dragInput
     bar.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1
@@ -159,29 +172,16 @@ sidebar.BorderSizePixel = 0
 sidebar.Parent = body
 
 local tabList = Instance.new("Frame")
-tabList.Size = UDim2.new(1, 0, 1, -56)
+tabList.Size = UDim2.new(1, 0, 1, -30)
 tabList.BackgroundTransparency = 1
 tabList.Parent = sidebar
 local tl = Instance.new("UIListLayout", tabList)
 tl.Padding = UDim.new(0, 4)
+tl.SortOrder = Enum.SortOrder.LayoutOrder
 local tp = Instance.new("UIPadding", tabList)
 tp.PaddingTop = UDim.new(0, 8)
 tp.PaddingLeft = UDim.new(0, 6)
 tp.PaddingRight = UDim.new(0, 6)
-
--- Profil + FPS
-local prof = Instance.new("TextLabel")
-prof.Size = UDim2.new(1, -12, 0, 28)
-prof.Position = UDim2.new(0, 6, 1, -52)
-prof.BackgroundTransparency = 1
-prof.Text = "Welcome, " .. lp.DisplayName
-prof.TextColor3 = C_GRAY
-prof.Font = Enum.Font.Gotham
-prof.TextSize = 10
-prof.TextWrapped = true
-prof.TextXAlignment = Enum.TextXAlignment.Left
-prof.TextYAlignment = Enum.TextYAlignment.Top
-prof.Parent = sidebar
 
 local fpsLbl = Instance.new("TextLabel")
 fpsLbl.Size = UDim2.new(1, -12, 0, 16)
@@ -206,7 +206,6 @@ do
     end)
 end
 
--- Halaman
 local pages, tabs = {}, {}
 local function newPage(name)
     local p = Instance.new("ScrollingFrame")
@@ -239,12 +238,13 @@ local function setTab(name)
     end
 end
 
-local function newTab(name)
+local function newTab(name, order)
     local b = Instance.new("TextButton")
     b.Size = UDim2.new(1, 0, 0, 30)
     b.Text = name
     b.Font = Enum.Font.GothamBold
     b.TextSize = 12
+    b.LayoutOrder = order
     b.Parent = tabList
     corner(b, 8)
     tabs[name] = b
@@ -252,11 +252,13 @@ local function newTab(name)
 end
 
 local mainPage = newPage("Main")
+local autoPage = newPage("Auto")
 local miscPage = newPage("Misc")
-newTab("Main")
-newTab("Misc")
+newTab("Main", 1)
+newTab("Auto", 2)
+newTab("Misc", 3)
 
--- Bagian (container) yang bisa dicari
+-- Bagian yang bisa dicari lewat kolom Search
 local sections = {}
 local function section(page, keyword, order)
     local f = Instance.new("Frame")
@@ -279,43 +281,89 @@ search:GetPropertyChangedSignal("Text"):Connect(function()
     end
 end)
 
+local function groupTitle(page, text, order)
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, 0, 0, 16)
+    l.BackgroundTransparency = 1
+    l.Text = text
+    l.TextColor3 = Color3.new(1, 1, 1)
+    l.Font = Enum.Font.GothamBold
+    l.TextSize = 12
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.LayoutOrder = order
+    l.Parent = page
+end
+
 local refreshers = {}
 local function refreshAll() for _, f in ipairs(refreshers) do f() end end
 
--- Baris switch
+local statusLbl
+local function setStatus(t, color)
+    if statusLbl then
+        statusLbl.Text = t
+        statusLbl.TextColor3 = color or C_GRAY
+    end
+end
+
+-- Judul + penjelasan kecil. inList=true: dipakai di dalam kartu ber-UIListLayout
+local function textBlock(parent, titleText, desc, widthOffset, inList)
+    local txt = Instance.new("Frame")
+    txt.Size = UDim2.new(1, inList and 0 or widthOffset, 0, 0)
+    txt.AutomaticSize = Enum.AutomaticSize.Y
+    txt.BackgroundTransparency = 1
+    txt.LayoutOrder = 1
+    if not inList then txt.Position = UDim2.new(0, 10, 0, 0) end
+    txt.Parent = parent
+    local l = Instance.new("UIListLayout", txt)
+    l.Padding = UDim.new(0, 2)
+    l.SortOrder = Enum.SortOrder.LayoutOrder
+    local pad = Instance.new("UIPadding", txt)
+    pad.PaddingTop = UDim.new(0, 7)
+    pad.PaddingBottom = UDim.new(0, 7)
+
+    local t = Instance.new("TextLabel")
+    t.Size = UDim2.new(1, 0, 0, 16)
+    t.BackgroundTransparency = 1
+    t.Text = titleText
+    t.TextColor3 = Color3.new(1, 1, 1)
+    t.Font = Enum.Font.GothamBold
+    t.TextSize = 12
+    t.TextXAlignment = Enum.TextXAlignment.Left
+    t.LayoutOrder = 1
+    t.Parent = txt
+
+    if desc then
+        local d = Instance.new("TextLabel")
+        d.Size = UDim2.new(1, 0, 0, 0)
+        d.AutomaticSize = Enum.AutomaticSize.Y
+        d.BackgroundTransparency = 1
+        d.Text = desc
+        d.TextColor3 = C_GRAY
+        d.Font = Enum.Font.Gotham
+        d.TextSize = 10
+        d.TextWrapped = true
+        d.TextXAlignment = Enum.TextXAlignment.Left
+        d.TextYAlignment = Enum.TextYAlignment.Top
+        d.LayoutOrder = 2
+        d.Parent = txt
+    end
+    return txt, t
+end
+
+-- Baris switch dengan penjelasan
 local function switchRow(parent, text, desc, key)
     local row = Instance.new("TextButton")
-    row.Size = UDim2.new(1, 0, 0, desc and 46 or 36)
+    row.Size = UDim2.new(1, 0, 0, 0)
+    row.AutomaticSize = Enum.AutomaticSize.Y
     row.BackgroundColor3 = C_ROW
     row.Text = ""
     row.AutoButtonColor = false
     row.LayoutOrder = 1
     row.Parent = parent
     corner(row, 8)
+    Instance.new("UISizeConstraint", row).MinSize = Vector2.new(0, 38)
 
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(1, -70, 0, 18)
-    lbl.Position = UDim2.new(0, 10, 0, desc and 6 or 9)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = text
-    lbl.TextColor3 = Color3.new(1, 1, 1)
-    lbl.Font = Enum.Font.GothamBold
-    lbl.TextSize = 12
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Parent = row
-
-    if desc then
-        local d = Instance.new("TextLabel")
-        d.Size = UDim2.new(1, -70, 0, 14)
-        d.Position = UDim2.new(0, 10, 0, 24)
-        d.BackgroundTransparency = 1
-        d.Text = desc
-        d.TextColor3 = C_GRAY
-        d.Font = Enum.Font.Gotham
-        d.TextSize = 10
-        d.TextXAlignment = Enum.TextXAlignment.Left
-        d.Parent = row
-    end
+    textBlock(row, text, desc, -64, false)
 
     local pill = Instance.new("Frame")
     pill.Size = UDim2.new(0, 40, 0, 20)
@@ -349,71 +397,65 @@ local function switchRow(parent, text, desc, key)
 end
 
 -- ===== HALAMAN MAIN =====
--- 1) Auto Sell
-local sAuto = section(mainPage, "auto sell", 1)
-switchRow(sAuto, "Auto Sell", "Jual otomatis brainrot sesuai rarity", "AutoSell")
+groupTitle(mainPage, "Sell", 1)
 
--- 2) Rarity To Sell (dropdown)
-local sRar = section(mainPage, "rarity to sell all common uncommon rare epic legendary mythic cosmic secret celestial divine brainrot god", 2)
+-- Auto Sell
+local sAuto = section(mainPage, "auto sell", 2)
+switchRow(sAuto, "Auto Sell",
+    "Jual brainrot otomatis tiap beberapa detik, hanya rarity yang kamu pilih di bawah.", "AutoSell")
+
+-- Rarity To Sell (dropdown daftar vertikal, bisa discroll)
+local sRar = section(mainPage,
+    "rarity to sell all common uncommon rare epic legendary mythic cosmic secret celestial divine brainrot god", 3)
 
 local rarBtn = Instance.new("TextButton")
-rarBtn.Size = UDim2.new(1, 0, 0, 36)
+rarBtn.Size = UDim2.new(1, 0, 0, 0)
+rarBtn.AutomaticSize = Enum.AutomaticSize.Y
 rarBtn.BackgroundColor3 = C_ROW
 rarBtn.Text = ""
 rarBtn.AutoButtonColor = false
 rarBtn.LayoutOrder = 1
 rarBtn.Parent = sRar
 corner(rarBtn, 8)
-
-local rarLbl = Instance.new("TextLabel")
-rarLbl.Size = UDim2.new(1, -40, 1, 0)
-rarLbl.Position = UDim2.new(0, 10, 0, 0)
-rarLbl.BackgroundTransparency = 1
-rarLbl.TextColor3 = Color3.new(1, 1, 1)
-rarLbl.Font = Enum.Font.GothamBold
-rarLbl.TextSize = 12
-rarLbl.TextXAlignment = Enum.TextXAlignment.Left
-rarLbl.Parent = rarBtn
+Instance.new("UISizeConstraint", rarBtn).MinSize = Vector2.new(0, 38)
+local _, rarTitle = textBlock(rarBtn, "Rarity To Sell",
+    "Pilih rarity yang boleh dijual. Rarity yang tidak dicentang tidak akan disentuh.", -40, false)
 
 local arrow = Instance.new("TextLabel")
-arrow.Size = UDim2.new(0, 24, 1, 0)
-arrow.Position = UDim2.new(1, -30, 0, 0)
+arrow.Size = UDim2.new(0, 24, 0, 20)
+arrow.Position = UDim2.new(1, -30, 0.5, -10)
 arrow.BackgroundTransparency = 1
 arrow.TextColor3 = Color3.new(1, 1, 1)
 arrow.Font = Enum.Font.GothamBold
 arrow.TextSize = 14
 arrow.Parent = rarBtn
 
-local panel = Instance.new("Frame")
-panel.Size = UDim2.new(1, 0, 0, 0)
-panel.AutomaticSize = Enum.AutomaticSize.Y
-panel.BackgroundColor3 = Color3.fromRGB(28, 28, 35)
-panel.Visible = false
-panel.LayoutOrder = 2
-panel.Parent = sRar
-corner(panel, 8)
-local pp = Instance.new("UIPadding", panel)
-pp.PaddingLeft = UDim.new(0, 8)
-pp.PaddingRight = UDim.new(0, 8)
-pp.PaddingTop = UDim.new(0, 8)
-pp.PaddingBottom = UDim.new(0, 8)
-
-local grid = Instance.new("Frame")
-grid.Size = UDim2.new(1, 0, 0, 0)
-grid.AutomaticSize = Enum.AutomaticSize.Y
-grid.BackgroundTransparency = 1
-grid.Parent = panel
-local gl = Instance.new("UIGridLayout", grid)
-gl.SortOrder = Enum.SortOrder.LayoutOrder
-gl.CellSize = UDim2.new(0.5, -3, 0, 28)
-gl.CellPadding = UDim2.new(0, 6, 0, 5)
+local list = Instance.new("ScrollingFrame")
+list.Size = UDim2.new(1, 0, 0, 130)
+list.BackgroundColor3 = Color3.fromRGB(28, 28, 35)
+list.BorderSizePixel = 0
+list.ScrollBarThickness = 3
+list.AutomaticCanvasSize = Enum.AutomaticSize.Y
+list.CanvasSize = UDim2.new(0, 0, 0, 0)
+list.Visible = false
+list.LayoutOrder = 2
+list.Parent = sRar
+corner(list, 8)
+local ll = Instance.new("UIListLayout", list)
+ll.Padding = UDim.new(0, 2)
+ll.SortOrder = Enum.SortOrder.LayoutOrder
+local lpad = Instance.new("UIPadding", list)
+lpad.PaddingLeft = UDim.new(0, 6)
+lpad.PaddingRight = UDim.new(0, 8)
+lpad.PaddingTop = UDim.new(0, 6)
+lpad.PaddingBottom = UDim.new(0, 6)
 
 local expanded = false
 local function updateRar()
     local n = countSelected()
-    rarLbl.Text = "Rarity To Sell" .. (n > 0 and ("  (" .. n .. ")") or "")
+    rarTitle.Text = "Rarity To Sell" .. (n > 0 and ("  (" .. n .. ")") or "")
     arrow.Text = expanded and "^" or ">"
-    panel.Visible = expanded
+    list.Visible = expanded
 end
 rarBtn.MouseButton1Click:Connect(function()
     expanded = not expanded
@@ -421,150 +463,103 @@ rarBtn.MouseButton1Click:Connect(function()
 end)
 table.insert(refreshers, updateRar)
 
-local function optBtn(order)
+local function optRow(order)
     local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1, 0, 0, 22)
+    b.BackgroundColor3 = C_ROW
+    b.BackgroundTransparency = 1
     b.Font = Enum.Font.GothamBold
     b.TextSize = 11
+    b.TextXAlignment = Enum.TextXAlignment.Left
     b.LayoutOrder = order
-    b.Parent = grid
-    corner(b, 6)
+    b.Parent = list
+    corner(b, 5)
+    Instance.new("UIPadding", b).PaddingLeft = UDim.new(0, 8)
     return b
 end
 
-local allBtn = optBtn(0)
+local allRow = optRow(0)
 table.insert(refreshers, function()
-    if allSelected() then
-        allBtn.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
-        allBtn.TextColor3 = Color3.new(0, 0, 0)
-        allBtn.Text = "✓ All"
-    else
-        allBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 54)
-        allBtn.TextColor3 = C_GRAY
-        allBtn.Text = "All"
-    end
+    local on = allSelected()
+    allRow.Text = (on and "✓  " or "    ") .. "All"
+    allRow.TextColor3 = on and Color3.new(1, 1, 1) or C_GRAY
+    allRow.BackgroundTransparency = on and 0 or 1
 end)
-allBtn.MouseButton1Click:Connect(function()
+allRow.MouseButton1Click:Connect(function()
     local s = not allSelected()
     for _, t in ipairs(TIERS) do t[3] = s end
     refreshAll()
 end)
 
 for idx, t in ipairs(TIERS) do
-    local b = optBtn(idx)
+    local r = optRow(idx)
     table.insert(refreshers, function()
-        if t[3] then
-            b.BackgroundColor3 = t[2]
-            b.TextColor3 = Color3.new(0, 0, 0)
-            b.Text = "✓ " .. t[1]
-        else
-            b.BackgroundColor3 = Color3.fromRGB(45, 45, 54)
-            b.TextColor3 = C_GRAY
-            b.Text = t[1]
-        end
+        r.Text = (t[3] and "✓  " or "    ") .. t[1]
+        r.TextColor3 = t[3] and t[2] or C_GRAY
+        r.BackgroundTransparency = t[3] and 0 or 1
     end)
-    b.MouseButton1Click:Connect(function()
+    r.MouseButton1Click:Connect(function()
         t[3] = not t[3]
         refreshAll()
     end)
 end
 
--- 3) Batas nilai (slider)
-local sVal = section(mainPage, "batas nilai sell value limit slider", 3)
-local MIN_FLOOR, MIN_CEIL = 1e3, 1e10
+-- Minimum Brainrot To Sell (input angka, mendukung k/m/b)
+local sVal = section(mainPage, "minimum brainrot to sell nilai batas value", 4)
+local valCard = Instance.new("Frame")
+valCard.Size = UDim2.new(1, 0, 0, 0)
+valCard.AutomaticSize = Enum.AutomaticSize.Y
+valCard.BackgroundColor3 = C_ROW
+valCard.LayoutOrder = 1
+valCard.Parent = sVal
+corner(valCard, 8)
+local vl = Instance.new("UIListLayout", valCard)
+vl.Padding = UDim.new(0, 4)
+vl.SortOrder = Enum.SortOrder.LayoutOrder
+local vpad = Instance.new("UIPadding", valCard)
+vpad.PaddingLeft = UDim.new(0, 10)
+vpad.PaddingRight = UDim.new(0, 10)
+vpad.PaddingBottom = UDim.new(0, 8)
 
-local valRow = Instance.new("Frame")
-valRow.Size = UDim2.new(1, 0, 0, 52)
-valRow.BackgroundColor3 = C_ROW
-valRow.LayoutOrder = 1
-valRow.Parent = sVal
-corner(valRow, 8)
+textBlock(valCard, "Minimum Brainrot To Sell",
+    "Hanya jual brainrot yang nilainya DI BAWAH angka ini (yang mahal aman). Kosong = jual per tier. Bisa pakai k, m, b.",
+    0, true)
 
-local valLbl = Instance.new("TextLabel")
-valLbl.Size = UDim2.new(1, -20, 0, 18)
-valLbl.Position = UDim2.new(0, 10, 0, 6)
-valLbl.BackgroundTransparency = 1
-valLbl.TextColor3 = Color3.new(1, 1, 1)
-valLbl.Font = Enum.Font.GothamBold
-valLbl.TextSize = 12
-valLbl.TextXAlignment = Enum.TextXAlignment.Left
-valLbl.Parent = valRow
+local valBox = Instance.new("TextBox")
+valBox.Size = UDim2.new(1, 0, 0, 26)
+valBox.BackgroundColor3 = C_BG
+valBox.PlaceholderText = "eg. 500k, 2m, 1b"
+valBox.PlaceholderColor3 = C_GRAY
+valBox.Text = ""
+valBox.TextColor3 = Color3.new(1, 1, 1)
+valBox.Font = Enum.Font.Gotham
+valBox.TextSize = 11
+valBox.ClearTextOnFocus = false
+valBox.LayoutOrder = 2
+valBox.Parent = valCard
+corner(valBox, 6)
 
-local track = Instance.new("Frame")
-track.Size = UDim2.new(1, -28, 0, 6)
-track.Position = UDim2.new(0, 14, 0, 36)
-track.BackgroundColor3 = Color3.fromRGB(60, 60, 72)
-track.BorderSizePixel = 0
-track.Parent = valRow
-corner(track, 3)
-
-local fill = Instance.new("Frame")
-fill.Size = UDim2.new(0, 0, 1, 0)
-fill.BackgroundColor3 = C_ACC
-fill.BorderSizePixel = 0
-fill.Parent = track
-corner(fill, 3)
-
-local sknob = Instance.new("TextButton")
-sknob.Size = UDim2.new(0, 18, 0, 18)
-sknob.AnchorPoint = Vector2.new(0.5, 0.5)
-sknob.Position = UDim2.new(0, 0, 0.5, 0)
-sknob.BackgroundColor3 = Color3.new(1, 1, 1)
-sknob.Text = ""
-sknob.Parent = track
-corner(sknob, 9)
-
-local function setSlider(p)
-    p = math.clamp(p, 0, 1)
-    sknob.Position = UDim2.new(p, 0, 0.5, 0)
-    fill.Size = UDim2.new(p, 0, 1, 0)
-    if p < 0.01 then
+valBox.FocusLost:Connect(function()
+    local v = parseValue(valBox.Text)
+    if v == nil then
         State.SellBelow = 0
-        valLbl.Text = "Batas nilai: OFF (jual per tier)"
+        setStatus("Format salah. Contoh: 500k, 2m, 1b", C_WARN)
+    elseif v == 0 then
+        State.SellBelow = 0
+        setStatus("Batas nilai OFF (jual per tier)")
     else
-        local raw = MIN_FLOOR * (MIN_CEIL / MIN_FLOOR) ^ p
-        local mag = 10 ^ (math.floor(math.log10(raw)) - 1)
-        State.SellBelow = math.floor(raw / mag + 0.5) * mag
-        valLbl.Text = "Jual yg nilainya < [" .. fmtNum(State.SellBelow) .. " / " .. fmtNum(MIN_CEIL) .. "]"
+        State.SellBelow = v
+        setStatus("Jual yang nilainya < " .. fmtNum(v), C_GOOD)
     end
-end
-do
-    local dragging, dragInput = false, nil
-    local function fromX(x) setSlider((x - track.AbsolutePosition.X) / track.AbsoluteSize.X) end
-    local function begin(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1
-            or i.UserInputType == Enum.UserInputType.Touch then
-            dragging, dragInput = true, i
-            fromX(i.Position.X)
-        end
-    end
-    sknob.InputBegan:Connect(begin)
-    track.InputBegan:Connect(begin)
-    UIS.InputChanged:Connect(function(i)
-        if dragging and (i == dragInput or i.UserInputType == Enum.UserInputType.MouseMovement) then
-            fromX(i.Position.X)
-        end
-    end)
-    UIS.InputEnded:Connect(function(i)
-        if i == dragInput then dragging = false end
-    end)
-end
-setSlider(0)
+end)
 
--- 4) Tombol Cek / Sell Sekarang
-local sBtn = section(mainPage, "cek sell sekarang", 4)
+-- Tombol Cek / Sell Sekarang
+local sBtn = section(mainPage, "cek sell sekarang", 5)
 local btnRow = Instance.new("Frame")
-btnRow.Size = UDim2.new(1, 0, 0, 32)
+btnRow.Size = UDim2.new(1, 0, 0, 28)
 btnRow.BackgroundTransparency = 1
 btnRow.LayoutOrder = 1
 btnRow.Parent = sBtn
-
-local statusLbl
-local function setStatus(t, color)
-    if statusLbl then
-        statusLbl.Text = t
-        statusLbl.TextColor3 = color or C_GRAY
-    end
-end
 
 local function rowBtn(text, color, xScale, xOff)
     local b = Instance.new("TextButton")
@@ -574,7 +569,7 @@ local function rowBtn(text, color, xScale, xOff)
     b.Text = text
     b.TextColor3 = Color3.new(1, 1, 1)
     b.Font = Enum.Font.GothamBold
-    b.TextSize = 12
+    b.TextSize = 11
     b.Parent = btnRow
     corner(b, 8)
     return b
@@ -584,12 +579,14 @@ local sellNow = rowBtn("Sell Sekarang", C_ACC, 0.5, 3)
 checkBtn.MouseButton1Click:Connect(function() setStatus("Preview: Cek belum terhubung", C_WARN) end)
 sellNow.MouseButton1Click:Connect(function() setStatus("Preview: Sell belum terhubung", C_WARN) end)
 
--- 5) Auto Collect Cash
-local sCol = section(mainPage, "auto collect cash", 5)
-switchRow(sCol, "Auto Collect Cash", nil, "AutoCollect")
+-- Cash
+groupTitle(mainPage, "Cash", 6)
+local sCol = section(mainPage, "auto collect cash", 7)
+switchRow(sCol, "Auto Collect Cash",
+    "Ambil uang otomatis tiap beberapa detik tanpa menekan tombol Collect.", "AutoCollect")
 
--- 6) Status
-local sStat = section(mainPage, "status", 6)
+-- Status
+local sStat = section(mainPage, "status", 8)
 statusLbl = Instance.new("TextLabel")
 statusLbl.Size = UDim2.new(1, 0, 0, 18)
 statusLbl.BackgroundTransparency = 1
@@ -601,17 +598,16 @@ statusLbl.TextXAlignment = Enum.TextXAlignment.Left
 statusLbl.LayoutOrder = 1
 statusLbl.Parent = sStat
 
+-- ===== HALAMAN AUTO =====
+local sReb = section(autoPage, "auto rebirth", 1)
+switchRow(sReb, "Auto Rebirth",
+    "Rebirth otomatis kalau syaratnya sudah terpenuhi. (Belum terhubung, butuh remote Rebirth.)",
+    "AutoRebirth")
+
 -- ===== HALAMAN MISC =====
-local sMisc = section(miscPage, "misc", 1)
-local miscLbl = Instance.new("TextLabel")
-miscLbl.Size = UDim2.new(1, 0, 0, 30)
-miscLbl.BackgroundTransparency = 1
-miscLbl.Text = "Belum ada fitur di sini."
-miscLbl.TextColor3 = C_GRAY
-miscLbl.Font = Enum.Font.Gotham
-miscLbl.TextSize = 11
-miscLbl.TextXAlignment = Enum.TextXAlignment.Left
-miscLbl.Parent = sMisc
+local sEsp = section(miscPage, "esp player", 1)
+switchRow(sEsp, "ESP Player",
+    "Menampilkan penanda pemain lain di layar. (Tampilan saja, belum terhubung.)", "ESPPlayer")
 
 refreshAll()
 setTab("Main")
