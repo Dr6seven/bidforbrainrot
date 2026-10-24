@@ -606,4 +606,36 @@ end
 local checkBtn = rowBtn("Cek (tanpa jual)", Color3.fromRGB(60, 110, 200), 0, 0)
 local sellNow = rowBtn("Sell Sekarang", C_ACC, 0.5, 3)
 checkBtn.MouseButton1Click:Connect(function() setStatus("Preview: Cek belum terhubung", C_WARN) end)
-sellNow.MouseButton1Click:Connect(function() setStatus("P
+sellNow.MouseButton1Click:Connect(function() setStatus("Preview: Sell belum terhubung", C_WARN) end)
+
+-- Auto (Collect + Rebirth)
+groupTitle(mainPage, "Auto", 6)
+local sCol = section(mainPage, "auto collect cash", 7)
+switchRow(sCol, "Auto Collect Cash",
+    "Ambil uang otomatis tiap beberapa detik tanpa menekan tombol Collect.", "AutoCollect")
+
+local sReb = section(mainPage, "auto rebirth", 8)
+switchRow(sReb, "Auto Rebirth",
+    "Rebirth otomatis kalau syaratnya sudah terpenuhi. (Belum terhubung, butuh remote Rebirth.)",
+    "AutoRebirth")
+
+-- Status
+local sStat = section(mainPage, "status", 9)
+statusLbl = Instance.new("TextLabel")
+statusLbl.Size = UDim2.new(1, 0, 0, 18)
+statusLbl.BackgroundTransparency = 1
+statusLbl.Text = "Siap. (preview)"
+statusLbl.TextColor3 = C_GRAY
+statusLbl.Font = Enum.Font.Gotham
+statusLbl.TextSize = 11
+statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+statusLbl.LayoutOrder = 1
+statusLbl.Parent = sStat
+
+-- ===== HALAMAN MISC =====
+local sEsp = section(miscPage, "esp player", 1)
+switchRow(sEsp, "ESP Player",
+    "Menampilkan penanda pemain lain di layar. (Tampilan saja, belum terhubung.)", "ESPPlayer")
+
+refreshAll()
+setTab("Main")
