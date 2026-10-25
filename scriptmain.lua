@@ -598,4 +598,238 @@ local valRow = Instance.new("Frame")
 valRow.Size = UDim2.new(1, 0, 0, 26)
 valRow.BackgroundTransparency = 1
 valRow.LayoutOrder = 2
-valRo
+valRow.Parent = valCard
+
+local function valBox(placeholder, xScale, xOff)
+    local b = Instance.new("TextBox")
+    b.Size = UDim2.new(0.5, -3, 1, 0)
+    b.Position = UDim2.new(xScale, xOff, 0, 0)
+    b.BackgroundColor3 = C_BG
+    b.PlaceholderText = placeholder
+    b.PlaceholderColor3 = C_GRAY
+    b.Text = ""
+    b.TextColor3 = Color3.new(1, 1, 1)
+    b.Font = Enum.Font.Gotham
+    b.TextSize = 11
+    b.ClearTextOnFocus = false
+    b.Parent = valRow
+    corner(b, 6)
+    return b
+end
+local minBox = valBox("Min  eg. 500k", 0, 0)
+local maxBox = valBox("Max  eg. 2m", 0.5, 3)
+
+local function applyRange()
+    local mn, mx = parseValue(minBox.Text), parseValue(maxBox.Text)
+    if mn == nil or mx == nil then
+        State.SellMin, State.SellMax = 0, 0
+        setStatus("Format salah. Contoh: 500k, 2m, 1b", C_WARN)
+    elseif mx == 0 then
+        State.SellMin, State.SellMax = 0, 0
+        setStatus("Filter nilai OFF (jual per rarity)")
+    elseif mn >= mx then
+        State.SellMin, State.SellMax = 0, 0
+        setStatus("Min harus lebih kecil dari Max", C_WARN)
+    else
+        State.SellMin, State.SellMax = mn, mx
+        setStatus("Jual nilai " .. fmtNum(mn) .. " - " .. fmtNum(mx), C_GOOD)
+    end
+end
+minBox.FocusLost:Connect(applyRange)
+maxBox.FocusLost:Connect(applyRange)
+
+groupTitle(mainPage, "Auto", 6)
+local sCol = section(mainPage, "auto collect cash", 7)
+switchRow(sCol, "Auto Collect Cash",
+    "Ambil uang otomatis tiap beberapa detik tanpa menekan tombol Collect.", "AutoCollect")
+
+local sReb = section(mainPage, "auto rebirth", 8)
+switchRow(sReb, "Auto Rebirth",
+    "Rebirth otomatis kalau syaratnya sudah terpenuhi. (Butuh remote Rebirth, lihat pengaturan di atas script.)",
+    "AutoRebirth")
+
+local sStat = section(mainPage, "status", 9)
+statusLbl = Instance.new("TextLabel")
+statusLbl.Size = UDim2.new(1, 0, 0, 18)
+statusLbl.BackgroundTransparency = 1
+statusLbl.Text = "Siap."
+statusLbl.TextColor3 = C_GRAY
+statusLbl.Font = Enum.Font.Gotham
+statusLbl.TextSize = 11
+statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+statusLbl.LayoutOrder = 1
+statusLbl.Parent = sStat
+
+-- ===== HALAMAN MISC =====
+groupTitle(miscPage, "ESP", 1)
+local sEsp = section(miscPage, "esp player", 2)
+switchRow(sEsp, "ESP Player",
+    "Menampilkan penanda pemain lain di layar. (Belum terhubung.)", "ESPPlayer")
+
+refreshAll()
+setTab("Main")
+
+-- ===== LOGIKA JUAL =====
+local selling = false
+
+local function duelBlocked()
+    local pg = lp:FindFirstChild("PlayerGui")
+    if not pg then return false end
+    for _, d in ipairs(pg:GetDescendants()) do
+        if d:IsA("TextLabel") and d.Visible and d.Text:lower():find("active duel") then
+            return true
+        end
+    end
+    return false
+end
+
+local function refreshInventory()
+    local stamp = State.InvStamp
+    pcall(function() RequestInventory:FireServer() end)
+    for _ = 1, 30 do
+        if State.InvStamp > stamp then return true end
+        task.wait(0.1)
+    end
+    return State.InvStamp > stamp
+end
+
+-- Brainrot yang memenuhi syarat: rarity tercentang + nilai di antara Min dan Max + tanpa grade
+local function getTargets()
+    local result = {}
+    for _, it in pairs(State.Inventory) do
+        if type(it) == "table" and type(it.value) == "number" and it.id then
+            local graded = SKIP_GRADED and it.grade ~= nil and it.grade ~= "None"
+            if tierOn(it.rarity) and it.value >= State.SellMin
+                and it.value < State.SellMax and not graded then
+                result[#result + 1] = it
+            end
+        end
+    end
+    table.sort(result, function(a, b) return a.value < b.value end)
+    return result
+end
+
+-- Mode per rarity (Max kosong): SellAll, klik + konfirmasi
+local function sellByTier()
+    for _, t in ipairs(TIERS) do
+        if not State.Running then return end
+        if t[3] then
+            setStatus("Jual " .. t[1] .. "...")
+            for i = 1, FIRE_COUNT do
+                pcall(function() SellAll:FireServer(t[1]) end)
+                if i < FIRE_COUNT then task.wait(CONFIRM_DELAY) end
+            end
+            task.wait(0.5)
+            if duelBlocked() then
+                setStatus("Duel aktif, jeda " .. DUEL_PAUSE .. " detik", C_WARN)
+                task.wait(DUEL_PAUSE)
+                return
+            end
+            task.wait(TIER_DELAY)
+        end
+    end
+    setStatus("Sell terakhir: " .. os.date("%H:%M:%S"), C_GOOD)
+end
+
+-- Mode filter nilai (Max diisi): SellItem satu per satu, klik + konfirmasi
+local function sellFiltered()
+    setStatus("Baca inventory...")
+    if not refreshInventory() then
+        setStatus("Inventory tidak terbaca.", C_WARN)
+        return
+    end
+    local targets = getTargets()
+    if #targets == 0 then
+        setStatus("Tidak ada yang perlu dijual.")
+        return
+    end
+    local total = math.min(#targets, MAX_PER_ROUND)
+    for i = 1, total do
+        if not State.Running then return end
+        local it = targets[i]
+        setStatus("Jual " .. i .. "/" .. total .. ": " .. tostring(it.name))
+        for n = 1, ITEM_FIRE do
+            pcall(function() SellItem:FireServer(it.id) end)
+            if n < ITEM_FIRE then task.wait(ITEM_CONFIRM_DELAY) end
+        end
+        task.wait(ITEM_DELAY)
+        if i == 1 then
+            task.wait(0.3)
+            if duelBlocked() then
+                setStatus("Duel aktif, jeda " .. DUEL_PAUSE .. " detik", C_WARN)
+                task.wait(DUEL_PAUSE)
+                return
+            end
+        end
+    end
+    setStatus("Terjual " .. total .. " item, " .. os.date("%H:%M:%S"), C_GOOD)
+end
+
+local function sellSelected()
+    if selling then return end
+    if countSelected() == 0 then
+        setStatus("Pilih rarity dulu.", C_WARN)
+        return
+    end
+    selling = true
+    if State.SellMax > 0 then sellFiltered() else sellByTier() end
+    selling = false
+end
+
+-- ===== LOOP (terpisah) =====
+task.spawn(function() -- auto sell
+    local t = SELL_INTERVAL
+    while State.Running do
+        task.wait(1)
+        if State.AutoSell then
+            t += 1
+            if t >= SELL_INTERVAL then
+                sellSelected()
+                t = 0
+            end
+        else
+            t = SELL_INTERVAL
+        end
+    end
+end)
+
+task.spawn(function() -- auto collect
+    local t = COLLECT_INTERVAL
+    while State.Running do
+        task.wait(1)
+        if State.AutoCollect then
+            t += 1
+            if t >= COLLECT_INTERVAL then
+                pcall(function() CollectCash:FireServer() end)
+                t = 0
+            end
+        else
+            t = COLLECT_INTERVAL
+        end
+    end
+end)
+
+task.spawn(function() -- auto rebirth
+    local t = REBIRTH_INTERVAL
+    local warned = false
+    while State.Running do
+        task.wait(1)
+        if State.AutoRebirth then
+            if not RebirthRemote then
+                if not warned then
+                    setStatus("Auto Rebirth: remote belum diisi", C_WARN)
+                    warned = true
+                end
+            else
+                t += 1
+                if t >= REBIRTH_INTERVAL then
+                    pcall(function() RebirthRemote:FireServer() end)
+                    t = 0
+                end
+            end
+        else
+            t = REBIRTH_INTERVAL
+            warned = false
+        end
+    end
+end)
