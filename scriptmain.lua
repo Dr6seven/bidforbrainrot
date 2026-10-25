@@ -1,4 +1,4 @@
--- BID FOR BRAINROT V1: UI + Auto Sell (rarity + filter nilai) + Auto Collect + Auto Rebirth
+-- BID FOR BRAINROT V1: UI + Auto Sell (rarity + filter nilai) + Auto Collect + Auto Rebirth + ESP
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
@@ -20,10 +20,10 @@ local TIER_DELAY = 2           -- mode per rarity: jeda antar rarity
 local ITEM_FIRE = 2            -- mode filter nilai: tembakan SellItem per brainrot
 local ITEM_CONFIRM_DELAY = 1   -- mode filter nilai: jeda klik -> konfirmasi
 local ITEM_DELAY = 0.6         -- mode filter nilai: jeda antar brainrot
-local MAX_PER_ROUND = 40       -- mode filter nilai: maksimal brainrot per putaran
+local MAX_PER_ROUND = 100      -- mode filter nilai: maksimal brainrot per putaran
 local SKIP_GRADED = true       -- lewati brainrot yang punya grade
 local DUEL_PAUSE = 10          -- detik, jeda kalau kena larangan duel
-local REBIRTH_REMOTE_NAME = nil -- isi nama remote Rebirth (di folder Player) kalau sudah ketemu
+local REBIRTH_REMOTE_NAME = "RebirthRequest"
 
 local C_BG   = Color3.fromRGB(18, 18, 22)
 local C_BAR  = Color3.fromRGB(26, 26, 32)
@@ -573,7 +573,7 @@ for idx, t in ipairs(TIERS) do
     end)
 end
 
--- Filter nilai: Min dan Max
+-- Filter nilai: Min dan Max (Max inklusif)
 local sVal = section(mainPage, "minimum maximum brainrot to sell nilai batas value min max", 4)
 local valCard = Instance.new("Frame")
 valCard.Size = UDim2.new(1, 0, 0, 0)
@@ -591,7 +591,7 @@ vpad.PaddingRight = UDim.new(0, 10)
 vpad.PaddingBottom = UDim.new(0, 8)
 
 textBlock(valCard, "Min / Max Brainrot To Sell",
-    "Hanya jual brainrot yang nilainya di antara Min dan Max. Max kosong = filter nilai mati (jual per rarity). Bisa pakai k, m, b.",
+    "Hanya jual brainrot yang nilainya di antara Min dan Max (termasuk angkanya). Max kosong = filter nilai mati (jual per rarity). Bisa pakai k, m, b.",
     0, true)
 
 local valRow = Instance.new("Frame")
@@ -627,9 +627,9 @@ local function applyRange()
     elseif mx == 0 then
         State.SellMin, State.SellMax = 0, 0
         setStatus("Filter nilai OFF (jual per rarity)")
-    elseif mn >= mx then
+    elseif mn > mx then
         State.SellMin, State.SellMax = 0, 0
-        setStatus("Min harus lebih kecil dari Max", C_WARN)
+        setStatus("Min tidak boleh lebih besar dari Max", C_WARN)
     else
         State.SellMin, State.SellMax = mn, mx
         setStatus("Jual nilai " .. fmtNum(mn) .. " - " .. fmtNum(mx), C_GOOD)
@@ -645,7 +645,7 @@ switchRow(sCol, "Auto Collect Cash",
 
 local sReb = section(mainPage, "auto rebirth", 8)
 switchRow(sReb, "Auto Rebirth",
-    "Rebirth otomatis kalau syaratnya sudah terpenuhi. (Butuh remote Rebirth, lihat pengaturan di atas script.)",
+    "Rebirth otomatis kalau syaratnya sudah terpenuhi. Hati-hati: rebirth bisa mereset progres.",
     "AutoRebirth")
 
 local sStat = section(mainPage, "status", 9)
@@ -657,6 +657,8 @@ statusLbl.TextColor3 = C_GRAY
 statusLbl.Font = Enum.Font.Gotham
 statusLbl.TextSize = 11
 statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+statusLbl.TextWrapped = true
+statusLbl.AutomaticSize = Enum.AutomaticSize.Y
 statusLbl.LayoutOrder = 1
 statusLbl.Parent = sStat
 
@@ -664,7 +666,7 @@ statusLbl.Parent = sStat
 groupTitle(miscPage, "ESP", 1)
 local sEsp = section(miscPage, "esp player", 2)
 switchRow(sEsp, "ESP Player",
-    "Menampilkan penanda pemain lain di layar. (Belum terhubung.)", "ESPPlayer")
+    "Menampilkan nama, jarak, dan glow pemain lain yang tembus tembok.", "ESPPlayer")
 
 refreshAll()
 setTab("Main")
@@ -696,17 +698,28 @@ end
 -- Brainrot yang memenuhi syarat: rarity tercentang + nilai di antara Min dan Max + tanpa grade
 local function getTargets()
     local result = {}
+    local stat = { rarityOk = 0, valueOut = 0, graded = 0 }
+    local seen = {}
     for _, it in pairs(State.Inventory) do
-        if type(it) == "table" and type(it.value) == "number" and it.id then
-            local graded = SKIP_GRADED and it.grade ~= nil and it.grade ~= "None"
-            if tierOn(it.rarity) and it.value >= State.SellMin
-                and it.value < State.SellMax and not graded then
-                result[#result + 1] = it
+        if type(it) == "table" and it.id then
+            local rname = tostring(it.rarity)
+            seen[rname] = (seen[rname] or 0) + 1
+            if tierOn(it.rarity) then
+                stat.rarityOk += 1
+                local graded = SKIP_GRADED and it.grade ~= nil and it.grade ~= "None"
+                if graded then
+                    stat.graded += 1
+                elseif type(it.value) ~= "number" or it.value < State.SellMin
+                    or it.value > State.SellMax then
+                    stat.valueOut += 1
+                else
+                    result[#result + 1] = it
+                end
             end
         end
     end
     table.sort(result, function(a, b) return a.value < b.value end)
-    return result
+    return result, stat, seen
 end
 
 -- Mode per rarity (Max kosong): SellAll, klik + konfirmasi
@@ -738,9 +751,15 @@ local function sellFiltered()
         setStatus("Inventory tidak terbaca.", C_WARN)
         return
     end
-    local targets = getTargets()
+    local targets, stat, seen = getTargets()
     if #targets == 0 then
-        setStatus("Tidak ada yang perlu dijual.")
+        local names = {}
+        for k, n in pairs(seen) do names[#names + 1] = k .. "(" .. n .. ")" end
+        table.sort(names)
+        setStatus("Kosong. Cocok rarity: " .. stat.rarityOk
+            .. ", di luar nilai: " .. stat.valueOut
+            .. ", bergrade: " .. stat.graded
+            .. " | Inventory: " .. table.concat(names, ", "), C_WARN)
         return
     end
     local total = math.min(#targets, MAX_PER_ROUND)
@@ -817,7 +836,7 @@ task.spawn(function() -- auto rebirth
         if State.AutoRebirth then
             if not RebirthRemote then
                 if not warned then
-                    setStatus("Auto Rebirth: remote belum diisi", C_WARN)
+                    setStatus("Auto Rebirth: remote tidak ketemu", C_WARN)
                     warned = true
                 end
             else
@@ -832,4 +851,98 @@ task.spawn(function() -- auto rebirth
             warned = false
         end
     end
+end)
+
+-- ===== ESP PLAYER (nama + jarak + glow) =====
+local espHolder = Instance.new("Folder")
+espHolder.Name = "BrainrotESP"
+espHolder.Parent = gui.Parent
+
+local tags, glows = {}, {}
+
+local function clearEsp()
+    for p, bb in pairs(tags) do
+        if bb then bb:Destroy() end
+        tags[p] = nil
+    end
+    for p, h in pairs(glows) do
+        if h then h:Destroy() end
+        glows[p] = nil
+    end
+end
+
+local function makeTag(head)
+    local bb = Instance.new("BillboardGui")
+    bb.Name = "ESPTag"
+    bb.Adornee = head
+    bb.Size = UDim2.new(0, 140, 0, 24)
+    bb.StudsOffset = Vector3.new(0, 2.5, 0)
+    bb.AlwaysOnTop = true
+    bb.Parent = espHolder
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Name = "Label"
+    lbl.Size = UDim2.new(1, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.TextColor3 = Color3.new(1, 1, 1)
+    lbl.TextStrokeTransparency = 0
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 12
+    lbl.Text = ""
+    lbl.Parent = bb
+    return bb
+end
+
+local function makeGlow(char)
+    local h = Instance.new("Highlight")
+    h.Name = "ESPGlow"
+    h.Adornee = char
+    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    h.FillColor = Color3.fromRGB(255, 80, 80)
+    h.FillTransparency = 0.65
+    h.OutlineColor = Color3.new(1, 1, 1)
+    h.OutlineTransparency = 0
+    h.Parent = espHolder
+    return h
+end
+
+Players.PlayerRemoving:Connect(function(plr)
+    if tags[plr] then tags[plr]:Destroy() tags[plr] = nil end
+    if glows[plr] then glows[plr]:Destroy() glows[plr] = nil end
+end)
+
+task.spawn(function()
+    while State.Running do
+        task.wait(0.4)
+        if State.ESPPlayer then
+            local myRoot = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr ~= lp then
+                    local char = plr.Character
+                    local head = char and (char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart"))
+                    local tag = tags[plr]
+                    if head and (not tag or tag.Adornee ~= head or not tag.Parent) then
+                        if tag then tag:Destroy() end
+                        tag = makeTag(head)
+                        tags[plr] = tag
+                    end
+                    local glow = glows[plr]
+                    if char and (not glow or glow.Adornee ~= char or not glow.Parent) then
+                        if glow then glow:Destroy() end
+                        glows[plr] = makeGlow(char)
+                    end
+                    if tag then
+                        local root = char and char:FindFirstChild("HumanoidRootPart")
+                        local dist = (myRoot and root) and math.floor((myRoot.Position - root.Position).Magnitude) or 0
+                        local lbl = tag:FindFirstChild("Label")
+                        if lbl then lbl.Text = plr.DisplayName .. "  [" .. dist .. "m]" end
+                    end
+                end
+            end
+        else
+            clearEsp()
+        end
+    end
+    clearEsp()
+    espHolder:Destroy()
 end)
