@@ -1193,3 +1193,184 @@ do
         end
 
         if StreakUpdated then
+            StreakUpdated.OnClientEvent:Connect(function(n)
+                if type(n) == "number" then
+                    State.Streak = n
+                    if State.ShowStreak then State.ShowStreak(n) end
+                    stopIfReached()
+                end
+            end)
+        end
+
+        AuctionPrompt.OnClientEvent:Connect(function(p)
+            if not State.AutoBid or not State.Running then return end
+            if type(p) ~= "table" or not p.active then return end   -- active = giliranmu
+            if p.promptId == nil or p.auctionId == nil then return end
+
+            local key = tostring(p.auctionId) .. ":" .. tostring(p.promptId)
+            if State.BidLast == key then return end
+            State.BidLast = key
+
+            task.spawn(function()
+                task.wait(0.8 + math.random() * 0.7)
+                if not State.AutoBid or not State.Running then return end
+                if stopIfReached() then return end
+
+                if State.BidOption == "Pass" then
+                    if p.canPass then
+                        pcall(function()
+                            BidSubmitted:FireServer({
+                                promptId = p.promptId,
+                                action = PASS_ACTION,
+                                auctionId = p.auctionId,
+                            })
+                        end)
+                        setStatus("Pass (" .. os.date("%H:%M:%S") .. ")", C_GOOD)
+                    else
+                        setStatus("Giliran ini tidak bisa di-pass", C_WARN)
+                    end
+                    return
+                end
+
+                local pick
+                for _, o in pairs(p.options or {}) do
+                    if type(o) == "table" and tostring(o.label) == State.BidOption then
+                        pick = o
+                        break
+                    end
+                end
+                if not pick then
+                    setStatus("Opsi " .. State.BidOption .. " tidak ada di giliran ini", C_WARN)
+                    return
+                end
+                if pick.canAfford == false then
+                    setStatus("Uang tidak cukup untuk " .. State.BidOption, C_WARN)
+                    return
+                end
+                if State.MaxBid > 0 and pick.amount > State.MaxBid then
+                    setStatus("Dilewati: " .. fmtNum(pick.amount)
+                        .. " di atas batas " .. fmtNum(State.MaxBid), C_WARN)
+                    return
+                end
+
+                pcall(function()
+                    BidSubmitted:FireServer({
+                        promptId = p.promptId,
+                        action = "bid",
+                        auctionId = p.auctionId,
+                        amount = pick.amount,
+                    })
+                end)
+                setStatus("Bid " .. State.BidOption .. " " .. fmtNum(pick.amount)
+                    .. " (" .. os.date("%H:%M:%S") .. ")", C_GOOD)
+            end)
+        end)
+    end
+end
+
+-- ===== AUTO BID: MASUK MEJA OTOMATIS (QuickJoin + cadangan EnterRequest) =====
+do
+    local JOIN_IDLE = 20           -- detik tanpa aktivitas lelang sebelum coba QuickJoin
+    local JOIN_COOLDOWN = 15       -- detik antar percobaan QuickJoin
+    local FALLBACK_ENABLED = true  -- false = matikan cadangan duduk lewat EnterRequest
+    local FALLBACK_IDLE = 35       -- detik tanpa aktivitas lelang sebelum cadangan jalan
+    local FALLBACK_COOLDOWN = 45   -- detik antar putaran cadangan
+    local CHAIRS = { "Chair1" }    -- tambah "Chair2" kalau memang ada
+
+    local TablesFolder = Ev.Parent:WaitForChild("Tables", 10)
+    local AuctionPrompt = TablesFolder and TablesFolder:WaitForChild("AuctionPrompt", 10)
+    local AuctionState = TablesFolder and TablesFolder:FindFirstChild("AuctionStateUpdated")
+    local EnterRequest = TablesFolder and TablesFolder:FindFirstChild("EnterRequest")
+    local QuickJoin = Ev:FindFirstChild("QuickJoin")
+
+    if not (AuctionPrompt and (QuickJoin or EnterRequest)) then
+        warn("[BidForBrainrot] Remote masuk meja tidak ketemu, masuk meja otomatis tidak aktif")
+    else
+        State.BidSeen = os.clock()
+
+        -- Tandai kapan terakhir kamu terlihat ikut lelang
+        AuctionPrompt.OnClientEvent:Connect(function()
+            State.BidSeen = os.clock()
+        end)
+        if AuctionState then
+            AuctionState.OnClientEvent:Connect(function(s)
+                if type(s) == "table" and type(s.participants) == "table" then
+                    for _, pt in pairs(s.participants) do
+                        if type(pt) == "table" and pt.userId == lp.UserId then
+                            State.BidSeen = os.clock()
+                            return
+                        end
+                    end
+                end
+            end)
+        end
+
+        local function seated()
+            local char = lp.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            return hum ~= nil and hum.SeatPart ~= nil
+        end
+
+        local function joined()
+            return seated() or (os.clock() - State.BidSeen) < 5
+        end
+
+        local function findTables()
+            local result, seen = {}, {}
+            for _, d in ipairs(workspace:GetDescendants()) do
+                if d.Name:match("^Table%d+$") and not seen[d.Name] then
+                    seen[d.Name] = true
+                    result[#result + 1] = d.Name
+                end
+            end
+            if #result == 0 then result = { "Table5", "Table7", "Table9", "Table11" } end
+            table.sort(result, function(a, b)
+                return tonumber(a:match("%d+")) < tonumber(b:match("%d+"))
+            end)
+            return result
+        end
+
+        if QuickJoin then
+            task.spawn(function()
+                local lastTry = 0
+                while State.Running do
+                    task.wait(2)
+                    if State.AutoBid then
+                        local now = os.clock()
+                        if now - State.BidSeen > JOIN_IDLE
+                            and now - lastTry > JOIN_COOLDOWN
+                            and not seated() then
+                            lastTry = now
+                            pcall(function() QuickJoin:FireServer() end)
+                            setStatus("Auto Bid: masuk meja (Quick Join)...", C_GRAY)
+                        end
+                    end
+                end
+            end)
+        end
+
+        if FALLBACK_ENABLED and EnterRequest then
+            task.spawn(function()
+                local last = 0
+                while State.Running do
+                    task.wait(2)
+                    local now = os.clock()
+                    if State.AutoBid and not joined()
+                        and now - State.BidSeen > FALLBACK_IDLE
+                        and now - last > FALLBACK_COOLDOWN then
+                        last = now
+                        for _, tname in ipairs(findTables()) do
+                            if not State.AutoBid or not State.Running or joined() then break end
+                            for _, chair in ipairs(CHAIRS) do
+                                pcall(function() EnterRequest:FireServer(tname, chair, true) end)
+                                setStatus("Auto Bid: coba duduk di " .. tname .. " " .. chair)
+                                task.wait(2)
+                                if joined() then break end
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end
