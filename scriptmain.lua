@@ -1,4 +1,4 @@
--- BID FOR BRAINROT V1: UI + Auto Sell + Auto Collect + Auto Rebirth + Auto Bid + ESP
+-- BID FOR BRAINROT V1 (By D33RZN): UI + Auto Bid + Auto Sell + Auto Collect + Auto Rebirth + ESP
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
@@ -150,16 +150,39 @@ bar.BackgroundColor3 = C_BAR
 bar.BorderSizePixel = 0
 bar.Parent = main
 
+-- Judul + tulisan kecil "By D33RZN" di sampingnya
+local titleBox = Instance.new("Frame")
+titleBox.Size = UDim2.new(1, -220, 1, 0)
+titleBox.Position = UDim2.new(0, 12, 0, 0)
+titleBox.BackgroundTransparency = 1
+titleBox.Parent = bar
+local tbl = Instance.new("UIListLayout", titleBox)
+tbl.FillDirection = Enum.FillDirection.Horizontal
+tbl.VerticalAlignment = Enum.VerticalAlignment.Center
+tbl.SortOrder = Enum.SortOrder.LayoutOrder
+tbl.Padding = UDim.new(0, 5)
+
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -220, 1, 0)
-title.Position = UDim2.new(0, 12, 0, 0)
+title.Size = UDim2.new(0, 0, 0, 16)
+title.AutomaticSize = Enum.AutomaticSize.X
 title.BackgroundTransparency = 1
 title.Text = "BID FOR BRAINROT V1"
 title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Parent = bar
+title.LayoutOrder = 1
+title.Parent = titleBox
+
+local credit = Instance.new("TextLabel")
+credit.Size = UDim2.new(0, 0, 0, 10)
+credit.AutomaticSize = Enum.AutomaticSize.X
+credit.BackgroundTransparency = 1
+credit.Text = "By D33RZN"
+credit.TextColor3 = C_GRAY
+credit.Font = Enum.Font.Gotham
+credit.TextSize = 7
+credit.LayoutOrder = 2
+credit.Parent = titleBox
 
 local search = Instance.new("TextBox")
 search.Size = UDim2.new(0, 120, 0, 22)
@@ -467,15 +490,17 @@ local function switchRow(parent, text, desc, key)
     refresh(false)
 end
 
--- ===== HALAMAN MAIN =====
-groupTitle(mainPage, "Sell", 1)
+-- ===== HALAMAN MAIN: urutan grup = Bid (1-4), Sell (10-13), Auto (20-22), Status (99) =====
 
-local sAuto = section(mainPage, "auto sell", 2)
+-- ----- SELL (urutan 10-13) -----
+groupTitle(mainPage, "Sell", 10)
+
+local sAuto = section(mainPage, "auto sell", 11)
 switchRow(sAuto, "Auto Sell",
     "Jual brainrot otomatis tiap beberapa detik, hanya rarity yang kamu pilih di bawah.", "AutoSell")
 
 local sRar = section(mainPage,
-    "rarity to sell all common uncommon rare epic legendary mythic cosmic secret celestial divine brainrot god", 3)
+    "rarity to sell all common uncommon rare epic legendary mythic cosmic secret celestial divine brainrot god", 12)
 
 local rarBtn = Instance.new("TextButton")
 rarBtn.Size = UDim2.new(1, 0, 0, 0)
@@ -574,7 +599,7 @@ for idx, t in ipairs(TIERS) do
 end
 
 -- Filter nilai: Min dan Max (Max inklusif)
-local sVal = section(mainPage, "minimum maximum brainrot to sell nilai batas value min max", 4)
+local sVal = section(mainPage, "minimum maximum brainrot to sell nilai batas value min max", 13)
 local valCard = Instance.new("Frame")
 valCard.Size = UDim2.new(1, 0, 0, 0)
 valCard.AutomaticSize = Enum.AutomaticSize.Y
@@ -638,16 +663,18 @@ end
 minBox.FocusLost:Connect(applyRange)
 maxBox.FocusLost:Connect(applyRange)
 
-groupTitle(mainPage, "Auto", 6)
-local sCol = section(mainPage, "auto collect cash", 7)
+-- ----- AUTO (urutan 20-22) -----
+groupTitle(mainPage, "Auto", 20)
+local sCol = section(mainPage, "auto collect cash", 21)
 switchRow(sCol, "Auto Collect Cash",
     "Ambil uang otomatis tiap beberapa detik tanpa menekan tombol Collect.", "AutoCollect")
 
-local sReb = section(mainPage, "auto rebirth", 8)
+local sReb = section(mainPage, "auto rebirth", 22)
 switchRow(sReb, "Auto Rebirth",
     "Rebirth otomatis kalau syaratnya sudah terpenuhi. Hati-hati: rebirth bisa mereset progres.",
     "AutoRebirth")
 
+-- ----- STATUS (paling bawah) -----
 local sStat = section(mainPage, "status", 99)
 statusLbl = Instance.new("TextLabel")
 statusLbl.Size = UDim2.new(1, 0, 0, 18)
@@ -668,9 +695,9 @@ local sEsp = section(miscPage, "esp player", 2)
 switchRow(sEsp, "ESP Player",
     "Menampilkan nama, jarak, dan glow pemain lain yang tembus tembok.", "ESPPlayer")
 
--- ===== BID (grup di tab Main) =====
+-- ----- BID (urutan 1-4, paling atas di tab Main) -----
 do
-    groupTitle(mainPage, "Bid", 10)
+    groupTitle(mainPage, "Bid", 1)
 
     State.AutoBid = false
     State.BidOption = "Small"
@@ -680,7 +707,7 @@ do
     State.BidLast = nil
 
     -- Auto Bid (switch)
-    local sBid = section(mainPage, "auto bid", 11)
+    local sBid = section(mainPage, "auto bid", 2)
     local rowB = Instance.new("TextButton")
     rowB.Size = UDim2.new(1, 0, 0, 0)
     rowB.AutomaticSize = Enum.AutomaticSize.Y
@@ -731,7 +758,7 @@ do
 
     -- Select Bid Options (dropdown, pilih salah satu)
     local OPTIONS = { "Small", "Medium", "High", "Extreme", "Pass" }
-    local sOpt = section(mainPage, "select bid options small medium high extreme pass", 12)
+    local sOpt = section(mainPage, "select bid options small medium high extreme pass", 3)
 
     local optBtn = Instance.new("TextButton")
     optBtn.Size = UDim2.new(1, 0, 0, 0)
@@ -809,7 +836,7 @@ do
     table.insert(refreshers, refreshBidOpts)
 
     -- Stop At Streak / Max Bid
-    local sLim = section(mainPage, "stop at streak max bid batas", 13)
+    local sLim = section(mainPage, "stop at streak max bid batas", 4)
     local card = Instance.new("Frame")
     card.Size = UDim2.new(1, 0, 0, 0)
     card.AutomaticSize = Enum.AutomaticSize.Y
@@ -1162,215 +1189,3 @@ task.spawn(function()
                 end
             end
         else
-            clearEsp()
-        end
-    end
-    clearEsp()
-    espHolder:Destroy()
-end)
-
--- ===== LOGIKA AUTO BID =====
-do
-    local PASS_ACTION = "pass"
-
-    local TablesFolder = Ev.Parent:WaitForChild("Tables", 10)
-    local BidSubmitted = TablesFolder and TablesFolder:WaitForChild("BidSubmitted", 10)
-    local AuctionPrompt = TablesFolder and TablesFolder:WaitForChild("AuctionPrompt", 10)
-    local StreakUpdated = Ev:FindFirstChild("StreakUpdated")
-
-    if not (BidSubmitted and AuctionPrompt) then
-        warn("[BidForBrainrot] Remote lelang tidak ketemu, Auto Bid tidak aktif")
-    else
-        local function stopIfReached()
-            if State.AutoBid and State.StopStreak > 0 and State.Streak
-                and State.Streak >= State.StopStreak then
-                State.BidSetAuto(false)
-                setStatus("Auto Bid berhenti: streak " .. State.Streak
-                    .. " mencapai " .. State.StopStreak, C_GOOD)
-                return true
-            end
-            return false
-        end
-
-        if StreakUpdated then
-            StreakUpdated.OnClientEvent:Connect(function(n)
-                if type(n) == "number" then
-                    State.Streak = n
-                    if State.ShowStreak then State.ShowStreak(n) end
-                    stopIfReached()
-                end
-            end)
-        end
-
-        AuctionPrompt.OnClientEvent:Connect(function(p)
-            if not State.AutoBid or not State.Running then return end
-            if type(p) ~= "table" or not p.active then return end   -- active = giliranmu
-            if p.promptId == nil or p.auctionId == nil then return end
-
-            local key = tostring(p.auctionId) .. ":" .. tostring(p.promptId)
-            if State.BidLast == key then return end
-            State.BidLast = key
-
-            task.spawn(function()
-                task.wait(0.8 + math.random() * 0.7)
-                if not State.AutoBid or not State.Running then return end
-                if stopIfReached() then return end
-
-                if State.BidOption == "Pass" then
-                    if p.canPass then
-                        pcall(function()
-                            BidSubmitted:FireServer({
-                                promptId = p.promptId,
-                                action = PASS_ACTION,
-                                auctionId = p.auctionId,
-                            })
-                        end)
-                        setStatus("Pass (" .. os.date("%H:%M:%S") .. ")", C_GOOD)
-                    else
-                        setStatus("Giliran ini tidak bisa di-pass", C_WARN)
-                    end
-                    return
-                end
-
-                local pick
-                for _, o in pairs(p.options or {}) do
-                    if type(o) == "table" and tostring(o.label) == State.BidOption then
-                        pick = o
-                        break
-                    end
-                end
-                if not pick then
-                    setStatus("Opsi " .. State.BidOption .. " tidak ada di giliran ini", C_WARN)
-                    return
-                end
-                if pick.canAfford == false then
-                    setStatus("Uang tidak cukup untuk " .. State.BidOption, C_WARN)
-                    return
-                end
-                if State.MaxBid > 0 and pick.amount > State.MaxBid then
-                    setStatus("Dilewati: " .. fmtNum(pick.amount)
-                        .. " di atas batas " .. fmtNum(State.MaxBid), C_WARN)
-                    return
-                end
-
-                pcall(function()
-                    BidSubmitted:FireServer({
-                        promptId = p.promptId,
-                        action = "bid",
-                        auctionId = p.auctionId,
-                        amount = pick.amount,
-                    })
-                end)
-                setStatus("Bid " .. State.BidOption .. " " .. fmtNum(pick.amount)
-                    .. " (" .. os.date("%H:%M:%S") .. ")", C_GOOD)
-            end)
-        end)
-    end
-end
-
--- ===== AUTO BID: MASUK MEJA OTOMATIS (QuickJoin + cadangan EnterRequest) =====
-do
-    local JOIN_IDLE = 20           -- detik tanpa aktivitas lelang sebelum coba QuickJoin
-    local JOIN_COOLDOWN = 15       -- detik antar percobaan QuickJoin
-    local FALLBACK_ENABLED = true  -- false = matikan cadangan duduk lewat EnterRequest
-    local FALLBACK_IDLE = 35       -- detik tanpa aktivitas lelang sebelum cadangan jalan
-    local FALLBACK_COOLDOWN = 45   -- detik antar putaran cadangan
-    local CHAIRS = { "Chair1" }    -- tambah "Chair2" kalau memang ada
-
-    local TablesFolder = Ev.Parent:WaitForChild("Tables", 10)
-    local AuctionPrompt = TablesFolder and TablesFolder:WaitForChild("AuctionPrompt", 10)
-    local AuctionState = TablesFolder and TablesFolder:FindFirstChild("AuctionStateUpdated")
-    local EnterRequest = TablesFolder and TablesFolder:FindFirstChild("EnterRequest")
-    local QuickJoin = Ev:FindFirstChild("QuickJoin")
-
-    if not (AuctionPrompt and (QuickJoin or EnterRequest)) then
-        warn("[BidForBrainrot] Remote masuk meja tidak ketemu, masuk meja otomatis tidak aktif")
-    else
-        State.BidSeen = os.clock()
-
-        -- Tandai kapan terakhir kamu terlihat ikut lelang
-        AuctionPrompt.OnClientEvent:Connect(function()
-            State.BidSeen = os.clock()
-        end)
-        if AuctionState then
-            AuctionState.OnClientEvent:Connect(function(s)
-                if type(s) == "table" and type(s.participants) == "table" then
-                    for _, pt in pairs(s.participants) do
-                        if type(pt) == "table" and pt.userId == lp.UserId then
-                            State.BidSeen = os.clock()
-                            return
-                        end
-                    end
-                end
-            end)
-        end
-
-        local function seated()
-            local char = lp.Character
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            return hum ~= nil and hum.SeatPart ~= nil
-        end
-
-        local function joined()
-            return seated() or (os.clock() - State.BidSeen) < 5
-        end
-
-        local function findTables()
-            local result, seen = {}, {}
-            for _, d in ipairs(workspace:GetDescendants()) do
-                if d.Name:match("^Table%d+$") and not seen[d.Name] then
-                    seen[d.Name] = true
-                    result[#result + 1] = d.Name
-                end
-            end
-            if #result == 0 then result = { "Table5", "Table7", "Table9", "Table11" } end
-            table.sort(result, function(a, b)
-                return tonumber(a:match("%d+")) < tonumber(b:match("%d+"))
-            end)
-            return result
-        end
-
-        if QuickJoin then
-            task.spawn(function()
-                local lastTry = 0
-                while State.Running do
-                    task.wait(2)
-                    if State.AutoBid then
-                        local now = os.clock()
-                        if now - State.BidSeen > JOIN_IDLE
-                            and now - lastTry > JOIN_COOLDOWN
-                            and not seated() then
-                            lastTry = now
-                            pcall(function() QuickJoin:FireServer() end)
-                            setStatus("Auto Bid: masuk meja (Quick Join)...", C_GRAY)
-                        end
-                    end
-                end
-            end)
-        end
-
-        if FALLBACK_ENABLED and EnterRequest then
-            task.spawn(function()
-                local last = 0
-                while State.Running do
-                    task.wait(2)
-                    local now = os.clock()
-                    if State.AutoBid and not joined()
-                        and now - State.BidSeen > FALLBACK_IDLE
-                        and now - last > FALLBACK_COOLDOWN then
-                        last = now
-                        for _, tname in ipairs(findTables()) do
-                            if not State.AutoBid or not State.Running or joined() then break end
-                            for _, chair in ipairs(CHAIRS) do
-                                pcall(function() EnterRequest:FireServer(tname, chair, true) end)
-                                setStatus("Auto Bid: coba duduk di " .. tname .. " " .. chair)
-                                task.wait(2)
-                                if joined() then break end
-                            end
-                        end
-                    end
-                end
-            end)
-        end
-    end
-end
