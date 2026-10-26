@@ -600,3 +600,596 @@ valRow.BackgroundTransparency = 1
 valRow.LayoutOrder = 2
 valRow.Parent = valCard
 
+local function valBox(placeholder, xScale, xOff)
+    local b = Instance.new("TextBox")
+    b.Size = UDim2.new(0.5, -3, 1, 0)
+    b.Position = UDim2.new(xScale, xOff, 0, 0)
+    b.BackgroundColor3 = C_BG
+    b.PlaceholderText = placeholder
+    b.PlaceholderColor3 = C_GRAY
+    b.Text = ""
+    b.TextColor3 = Color3.new(1, 1, 1)
+    b.Font = Enum.Font.Gotham
+    b.TextSize = 11
+    b.ClearTextOnFocus = false
+    b.Parent = valRow
+    corner(b, 6)
+    return b
+end
+local minBox = valBox("Min  eg. 500k", 0, 0)
+local maxBox = valBox("Max  eg. 2m", 0.5, 3)
+
+local function applyRange()
+    local mn, mx = parseValue(minBox.Text), parseValue(maxBox.Text)
+    if mn == nil or mx == nil then
+        State.SellMin, State.SellMax = 0, 0
+        setStatus("Format salah. Contoh: 500k, 2m, 1b", C_WARN)
+    elseif mx == 0 then
+        State.SellMin, State.SellMax = 0, 0
+        setStatus("Filter nilai OFF (jual per rarity)")
+    elseif mn > mx then
+        State.SellMin, State.SellMax = 0, 0
+        setStatus("Min tidak boleh lebih besar dari Max", C_WARN)
+    else
+        State.SellMin, State.SellMax = mn, mx
+        setStatus("Jual nilai " .. fmtNum(mn) .. " - " .. fmtNum(mx), C_GOOD)
+    end
+end
+minBox.FocusLost:Connect(applyRange)
+maxBox.FocusLost:Connect(applyRange)
+
+groupTitle(mainPage, "Auto", 6)
+local sCol = section(mainPage, "auto collect cash", 7)
+switchRow(sCol, "Auto Collect Cash",
+    "Ambil uang otomatis tiap beberapa detik tanpa menekan tombol Collect.", "AutoCollect")
+
+local sReb = section(mainPage, "auto rebirth", 8)
+switchRow(sReb, "Auto Rebirth",
+    "Rebirth otomatis kalau syaratnya sudah terpenuhi. Hati-hati: rebirth bisa mereset progres.",
+    "AutoRebirth")
+
+local sStat = section(mainPage, "status", 99)
+statusLbl = Instance.new("TextLabel")
+statusLbl.Size = UDim2.new(1, 0, 0, 18)
+statusLbl.BackgroundTransparency = 1
+statusLbl.Text = "Siap."
+statusLbl.TextColor3 = C_GRAY
+statusLbl.Font = Enum.Font.Gotham
+statusLbl.TextSize = 11
+statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+statusLbl.TextWrapped = true
+statusLbl.AutomaticSize = Enum.AutomaticSize.Y
+statusLbl.LayoutOrder = 1
+statusLbl.Parent = sStat
+
+-- ===== HALAMAN MISC =====
+groupTitle(miscPage, "ESP", 1)
+local sEsp = section(miscPage, "esp player", 2)
+switchRow(sEsp, "ESP Player",
+    "Menampilkan nama, jarak, dan glow pemain lain yang tembus tembok.", "ESPPlayer")
+
+-- ===== BID (grup di tab Main) =====
+do
+    groupTitle(mainPage, "Bid", 10)
+
+    State.AutoBid = false
+    State.BidOption = "Small"
+    State.MaxBid = 0
+    State.StopStreak = 0
+    State.Streak = nil
+    State.BidLast = nil
+
+    -- Auto Bid (switch)
+    local sBid = section(mainPage, "auto bid", 11)
+    local rowB = Instance.new("TextButton")
+    rowB.Size = UDim2.new(1, 0, 0, 0)
+    rowB.AutomaticSize = Enum.AutomaticSize.Y
+    rowB.BackgroundColor3 = C_ROW
+    rowB.Text = ""
+    rowB.AutoButtonColor = false
+    rowB.LayoutOrder = 1
+    rowB.Parent = sBid
+    corner(rowB, 8)
+    Instance.new("UISizeConstraint", rowB).MinSize = Vector2.new(0, 38)
+    textBlock(rowB, "Auto Bid",
+        "Cari meja yang sudah ada pemainnya (Quick Join) kalau belum duduk, lalu bid di giliranmu sesuai opsi di bawah.",
+        -64, false)
+
+    local pillB = Instance.new("Frame")
+    pillB.Size = UDim2.new(0, 40, 0, 20)
+    pillB.Position = UDim2.new(1, -50, 0.5, -10)
+    pillB.Parent = rowB
+    corner(pillB, 10)
+    local knobB = Instance.new("Frame")
+    knobB.Size = UDim2.new(0, 16, 0, 16)
+    knobB.BackgroundColor3 = Color3.new(1, 1, 1)
+    knobB.Parent = pillB
+    corner(knobB, 8)
+
+    local function refreshBidSwitch(animate)
+        local on = State.AutoBid
+        local col = on and C_ON or C_OFF
+        local pos = on and UDim2.new(1, -18, 0, 2) or UDim2.new(0, 2, 0, 2)
+        if animate then
+            local info = TweenInfo.new(0.15)
+            TS:Create(pillB, info, { BackgroundColor3 = col }):Play()
+            TS:Create(knobB, info, { Position = pos }):Play()
+        else
+            pillB.BackgroundColor3 = col
+            knobB.Position = pos
+        end
+    end
+    State.BidSetAuto = function(on)
+        State.AutoBid = on
+        refreshBidSwitch(true)
+    end
+    rowB.MouseButton1Click:Connect(function()
+        State.BidSetAuto(not State.AutoBid)
+        if State.AutoBid then setStatus("Auto Bid: menunggu giliran...") end
+    end)
+    refreshBidSwitch(false)
+
+    -- Select Bid Options (dropdown, pilih salah satu)
+    local OPTIONS = { "Small", "Medium", "High", "Extreme", "Pass" }
+    local sOpt = section(mainPage, "select bid options small medium high extreme pass", 12)
+
+    local optBtn = Instance.new("TextButton")
+    optBtn.Size = UDim2.new(1, 0, 0, 0)
+    optBtn.AutomaticSize = Enum.AutomaticSize.Y
+    optBtn.BackgroundColor3 = C_ROW
+    optBtn.Text = ""
+    optBtn.AutoButtonColor = false
+    optBtn.LayoutOrder = 1
+    optBtn.Parent = sOpt
+    corner(optBtn, 8)
+    Instance.new("UISizeConstraint", optBtn).MinSize = Vector2.new(0, 38)
+    local _, optTitle = textBlock(optBtn, "Select Bid Options",
+        "Pilih salah satu. Pass = lewati giliran tanpa bid.", -40, false)
+
+    local optArrow = Instance.new("TextLabel")
+    optArrow.Size = UDim2.new(0, 24, 0, 20)
+    optArrow.Position = UDim2.new(1, -30, 0.5, -10)
+    optArrow.BackgroundTransparency = 1
+    optArrow.TextColor3 = Color3.new(1, 1, 1)
+    optArrow.Font = Enum.Font.GothamBold
+    optArrow.TextSize = 14
+    optArrow.Parent = optBtn
+
+    local optList = Instance.new("Frame")
+    optList.Size = UDim2.new(1, 0, 0, 0)
+    optList.AutomaticSize = Enum.AutomaticSize.Y
+    optList.BackgroundColor3 = Color3.fromRGB(28, 28, 35)
+    optList.Visible = false
+    optList.LayoutOrder = 2
+    optList.Parent = sOpt
+    corner(optList, 8)
+    local oll = Instance.new("UIListLayout", optList)
+    oll.Padding = UDim.new(0, 2)
+    oll.SortOrder = Enum.SortOrder.LayoutOrder
+    local olp = Instance.new("UIPadding", optList)
+    olp.PaddingLeft = UDim.new(0, 6)
+    olp.PaddingRight = UDim.new(0, 6)
+    olp.PaddingTop = UDim.new(0, 6)
+    olp.PaddingBottom = UDim.new(0, 6)
+
+    local optRows, optOpen = {}, false
+    local function refreshBidOpts()
+        optTitle.Text = "Select Bid Options  (" .. State.BidOption .. ")"
+        optArrow.Text = optOpen and "^" or ">"
+        optList.Visible = optOpen
+        for name, r in pairs(optRows) do
+            local on = (name == State.BidOption)
+            r.Text = (on and "✓  " or "    ") .. name
+            r.TextColor3 = on and Color3.new(1, 1, 1) or C_GRAY
+            r.BackgroundTransparency = on and 0 or 1
+        end
+    end
+    for i, name in ipairs(OPTIONS) do
+        local r = Instance.new("TextButton")
+        r.Size = UDim2.new(1, 0, 0, 24)
+        r.BackgroundColor3 = C_ROW
+        r.BackgroundTransparency = 1
+        r.Font = Enum.Font.GothamBold
+        r.TextSize = 11
+        r.TextXAlignment = Enum.TextXAlignment.Left
+        r.LayoutOrder = i
+        r.Parent = optList
+        corner(r, 5)
+        Instance.new("UIPadding", r).PaddingLeft = UDim.new(0, 8)
+        optRows[name] = r
+        r.MouseButton1Click:Connect(function()
+            State.BidOption = name
+            refreshBidOpts()
+        end)
+    end
+    optBtn.MouseButton1Click:Connect(function()
+        optOpen = not optOpen
+        refreshBidOpts()
+    end)
+    table.insert(refreshers, refreshBidOpts)
+
+    -- Stop At Streak / Max Bid
+    local sLim = section(mainPage, "stop at streak max bid batas", 13)
+    local card = Instance.new("Frame")
+    card.Size = UDim2.new(1, 0, 0, 0)
+    card.AutomaticSize = Enum.AutomaticSize.Y
+    card.BackgroundColor3 = C_ROW
+    card.LayoutOrder = 1
+    card.Parent = sLim
+    corner(card, 8)
+    local cl = Instance.new("UIListLayout", card)
+    cl.Padding = UDim.new(0, 4)
+    cl.SortOrder = Enum.SortOrder.LayoutOrder
+    local cp = Instance.new("UIPadding", card)
+    cp.PaddingLeft = UDim.new(0, 10)
+    cp.PaddingRight = UDim.new(0, 10)
+    cp.PaddingBottom = UDim.new(0, 8)
+
+    textBlock(card, "Stop At Streak / Max Bid",
+        "Auto Bid mati sendiri saat streak sudah sama atau lebih dari angka ini. Max Bid melewati giliran yang nominalnya lebih besar. Kosong = tidak dibatasi.",
+        0, true)
+
+    local limRow = Instance.new("Frame")
+    limRow.Size = UDim2.new(1, 0, 0, 26)
+    limRow.BackgroundTransparency = 1
+    limRow.LayoutOrder = 2
+    limRow.Parent = card
+
+    local function limBox(placeholder, xScale, xOff)
+        local b = Instance.new("TextBox")
+        b.Size = UDim2.new(0.5, -3, 1, 0)
+        b.Position = UDim2.new(xScale, xOff, 0, 0)
+        b.BackgroundColor3 = C_BG
+        b.PlaceholderText = placeholder
+        b.PlaceholderColor3 = C_GRAY
+        b.Text = ""
+        b.TextColor3 = Color3.new(1, 1, 1)
+        b.Font = Enum.Font.Gotham
+        b.TextSize = 11
+        b.ClearTextOnFocus = false
+        b.Parent = limRow
+        corner(b, 6)
+        return b
+    end
+    local streakBoxB = limBox("Streak  eg. 100", 0, 0)
+    local maxBoxB = limBox("Max bid  eg. 5m", 0.5, 3)
+
+    local streakLblB = Instance.new("TextLabel")
+    streakLblB.Size = UDim2.new(1, 0, 0, 16)
+    streakLblB.BackgroundTransparency = 1
+    streakLblB.Text = "Streak: -"
+    streakLblB.TextColor3 = C_GRAY
+    streakLblB.Font = Enum.Font.GothamBold
+    streakLblB.TextSize = 11
+    streakLblB.TextXAlignment = Enum.TextXAlignment.Left
+    streakLblB.LayoutOrder = 3
+    streakLblB.Parent = card
+    State.ShowStreak = function(n) streakLblB.Text = "Streak: " .. tostring(n) end
+
+    streakBoxB.FocusLost:Connect(function()
+        local v = parseValue(streakBoxB.Text)
+        if v == nil then
+            State.StopStreak = 0
+            setStatus("Streak: format salah (contoh 100)", C_WARN)
+        else
+            State.StopStreak = v
+            setStatus(v == 0 and "Stop streak: OFF" or ("Berhenti di streak " .. fmtNum(v)),
+                v == 0 and C_GRAY or C_GOOD)
+        end
+    end)
+    maxBoxB.FocusLost:Connect(function()
+        local v = parseValue(maxBoxB.Text)
+        if v == nil then
+            State.MaxBid = 0
+            setStatus("Max bid: format salah (contoh 5m)", C_WARN)
+        else
+            State.MaxBid = v
+            setStatus(v == 0 and "Max bid: tanpa batas" or ("Max bid: " .. fmtNum(v)),
+                v == 0 and C_GRAY or C_GOOD)
+        end
+    end)
+end
+
+refreshAll()
+setTab("Main")
+
+-- ===== LOGIKA JUAL =====
+local selling = false
+
+local function duelBlocked()
+    local pg = lp:FindFirstChild("PlayerGui")
+    if not pg then return false end
+    for _, d in ipairs(pg:GetDescendants()) do
+        if d:IsA("TextLabel") and d.Visible and d.Text:lower():find("active duel") then
+            return true
+        end
+    end
+    return false
+end
+
+local function refreshInventory()
+    local stamp = State.InvStamp
+    pcall(function() RequestInventory:FireServer() end)
+    for _ = 1, 30 do
+        if State.InvStamp > stamp then return true end
+        task.wait(0.1)
+    end
+    return State.InvStamp > stamp
+end
+
+-- Brainrot yang memenuhi syarat: rarity tercentang + nilai di antara Min dan Max + tanpa grade
+local function getTargets()
+    local result = {}
+    local stat = { rarityOk = 0, valueOut = 0, graded = 0 }
+    local seen = {}
+    for _, it in pairs(State.Inventory) do
+        if type(it) == "table" and it.id then
+            local rname = tostring(it.rarity)
+            seen[rname] = (seen[rname] or 0) + 1
+            if tierOn(it.rarity) then
+                stat.rarityOk += 1
+                local graded = SKIP_GRADED and it.grade ~= nil and it.grade ~= "None"
+                if graded then
+                    stat.graded += 1
+                elseif type(it.value) ~= "number" or it.value < State.SellMin
+                    or it.value > State.SellMax then
+                    stat.valueOut += 1
+                else
+                    result[#result + 1] = it
+                end
+            end
+        end
+    end
+    table.sort(result, function(a, b) return a.value < b.value end)
+    return result, stat, seen
+end
+
+-- Mode per rarity (Max kosong): SellAll, klik + konfirmasi
+local function sellByTier()
+    for _, t in ipairs(TIERS) do
+        if not State.Running then return end
+        if t[3] then
+            setStatus("Jual " .. t[1] .. "...")
+            for i = 1, FIRE_COUNT do
+                pcall(function() SellAll:FireServer(t[1]) end)
+                if i < FIRE_COUNT then task.wait(CONFIRM_DELAY) end
+            end
+            task.wait(0.5)
+            if duelBlocked() then
+                setStatus("Duel aktif, jeda " .. DUEL_PAUSE .. " detik", C_WARN)
+                task.wait(DUEL_PAUSE)
+                return
+            end
+            task.wait(TIER_DELAY)
+        end
+    end
+    setStatus("Sell terakhir: " .. os.date("%H:%M:%S"), C_GOOD)
+end
+
+-- Mode filter nilai (Max diisi): SellItem satu per satu, klik + konfirmasi
+local function sellFiltered()
+    setStatus("Baca inventory...")
+    if not refreshInventory() then
+        setStatus("Inventory tidak terbaca.", C_WARN)
+        return
+    end
+    local targets, stat, seen = getTargets()
+    if #targets == 0 then
+        local names = {}
+        for k, n in pairs(seen) do names[#names + 1] = k .. "(" .. n .. ")" end
+        table.sort(names)
+        setStatus("Kosong. Cocok rarity: " .. stat.rarityOk
+            .. ", di luar nilai: " .. stat.valueOut
+            .. ", bergrade: " .. stat.graded
+            .. " | Inventory: " .. table.concat(names, ", "), C_WARN)
+        return
+    end
+    local total = math.min(#targets, MAX_PER_ROUND)
+    for i = 1, total do
+        if not State.Running then return end
+        local it = targets[i]
+        setStatus("Jual " .. i .. "/" .. total .. ": " .. tostring(it.name))
+        for n = 1, ITEM_FIRE do
+            pcall(function() SellItem:FireServer(it.id) end)
+            if n < ITEM_FIRE then task.wait(ITEM_CONFIRM_DELAY) end
+        end
+        task.wait(ITEM_DELAY)
+        if i == 1 then
+            task.wait(0.3)
+            if duelBlocked() then
+                setStatus("Duel aktif, jeda " .. DUEL_PAUSE .. " detik", C_WARN)
+                task.wait(DUEL_PAUSE)
+                return
+            end
+        end
+    end
+    setStatus("Terjual " .. total .. " item, " .. os.date("%H:%M:%S"), C_GOOD)
+end
+
+local function sellSelected()
+    if selling then return end
+    if countSelected() == 0 then
+        setStatus("Pilih rarity dulu.", C_WARN)
+        return
+    end
+    selling = true
+    if State.SellMax > 0 then sellFiltered() else sellByTier() end
+    selling = false
+end
+
+-- ===== LOOP (terpisah) =====
+task.spawn(function() -- auto sell
+    local t = SELL_INTERVAL
+    while State.Running do
+        task.wait(1)
+        if State.AutoSell then
+            t += 1
+            if t >= SELL_INTERVAL then
+                sellSelected()
+                t = 0
+            end
+        else
+            t = SELL_INTERVAL
+        end
+    end
+end)
+
+task.spawn(function() -- auto collect
+    local t = COLLECT_INTERVAL
+    while State.Running do
+        task.wait(1)
+        if State.AutoCollect then
+            t += 1
+            if t >= COLLECT_INTERVAL then
+                pcall(function() CollectCash:FireServer() end)
+                t = 0
+            end
+        else
+            t = COLLECT_INTERVAL
+        end
+    end
+end)
+
+task.spawn(function() -- auto rebirth
+    local t = REBIRTH_INTERVAL
+    local warned = false
+    while State.Running do
+        task.wait(1)
+        if State.AutoRebirth then
+            if not RebirthRemote then
+                if not warned then
+                    setStatus("Auto Rebirth: remote tidak ketemu", C_WARN)
+                    warned = true
+                end
+            else
+                t += 1
+                if t >= REBIRTH_INTERVAL then
+                    pcall(function() RebirthRemote:FireServer() end)
+                    t = 0
+                end
+            end
+        else
+            t = REBIRTH_INTERVAL
+            warned = false
+        end
+    end
+end)
+
+-- ===== ESP PLAYER (nama + jarak + glow) =====
+local espHolder = Instance.new("Folder")
+espHolder.Name = "BrainrotESP"
+espHolder.Parent = gui.Parent
+
+local tags, glows = {}, {}
+
+local function clearEsp()
+    for p, bb in pairs(tags) do
+        if bb then bb:Destroy() end
+        tags[p] = nil
+    end
+    for p, h in pairs(glows) do
+        if h then h:Destroy() end
+        glows[p] = nil
+    end
+end
+
+local function makeTag(head)
+    local bb = Instance.new("BillboardGui")
+    bb.Name = "ESPTag"
+    bb.Adornee = head
+    bb.Size = UDim2.new(0, 140, 0, 24)
+    bb.StudsOffset = Vector3.new(0, 2.5, 0)
+    bb.AlwaysOnTop = true
+    bb.Parent = espHolder
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Name = "Label"
+    lbl.Size = UDim2.new(1, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.TextColor3 = Color3.new(1, 1, 1)
+    lbl.TextStrokeTransparency = 0
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 12
+    lbl.Text = ""
+    lbl.Parent = bb
+    return bb
+end
+
+local function makeGlow(char)
+    local h = Instance.new("Highlight")
+    h.Name = "ESPGlow"
+    h.Adornee = char
+    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    h.FillColor = Color3.fromRGB(255, 80, 80)
+    h.FillTransparency = 0.65
+    h.OutlineColor = Color3.new(1, 1, 1)
+    h.OutlineTransparency = 0
+    h.Parent = espHolder
+    return h
+end
+
+Players.PlayerRemoving:Connect(function(plr)
+    if tags[plr] then tags[plr]:Destroy() tags[plr] = nil end
+    if glows[plr] then glows[plr]:Destroy() glows[plr] = nil end
+end)
+
+task.spawn(function()
+    while State.Running do
+        task.wait(0.4)
+        if State.ESPPlayer then
+            local myRoot = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr ~= lp then
+                    local char = plr.Character
+                    local head = char and (char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart"))
+                    local tag = tags[plr]
+                    if head and (not tag or tag.Adornee ~= head or not tag.Parent) then
+                        if tag then tag:Destroy() end
+                        tag = makeTag(head)
+                        tags[plr] = tag
+                    end
+                    local glow = glows[plr]
+                    if char and (not glow or glow.Adornee ~= char or not glow.Parent) then
+                        if glow then glow:Destroy() end
+                        glows[plr] = makeGlow(char)
+                    end
+                    if tag then
+                        local root = char and char:FindFirstChild("HumanoidRootPart")
+                        local dist = (myRoot and root) and math.floor((myRoot.Position - root.Position).Magnitude) or 0
+                        local lbl = tag:FindFirstChild("Label")
+                        if lbl then lbl.Text = plr.DisplayName .. "  [" .. dist .. "m]" end
+                    end
+                end
+            end
+        else
+            clearEsp()
+        end
+    end
+    clearEsp()
+    espHolder:Destroy()
+end)
+
+-- ===== LOGIKA AUTO BID =====
+do
+    local PASS_ACTION = "pass"
+
+    local TablesFolder = Ev.Parent:WaitForChild("Tables", 10)
+    local BidSubmitted = TablesFolder and TablesFolder:WaitForChild("BidSubmitted", 10)
+    local AuctionPrompt = TablesFolder and TablesFolder:WaitForChild("AuctionPrompt", 10)
+    local StreakUpdated = Ev:FindFirstChild("StreakUpdated")
+
+    if not (BidSubmitted and AuctionPrompt) then
+        warn("[BidForBrainrot] Remote lelang tidak ketemu, Auto Bid tidak aktif")
+    else
+        local function stopIfReached()
+            if State.AutoBid and State.StopStreak > 0 and State.Streak
+                and State.Streak >= State.StopStreak then
+                State.BidSetAuto(false)
+                setStatus("Auto Bid berhenti: streak " .. State.Streak
+                    .. " mencapai " .. State.StopStreak, C_GOOD)
+                return true
+            end
+            return false
+        end
+
+        if StreakUpdated then
